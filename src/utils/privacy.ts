@@ -26,43 +26,66 @@ export interface WebGLInfo {
 
 // Get IP and geolocation info
 export async function getIPInfo(): Promise<IPInfo | null> {
-  try {
-    // Try freeipapi.com first
-    const response = await fetch('https://freeipapi.com/api/json');
-    if (response.ok) {
-      const data = await response.json();
-      return {
-        ip: data.ipAddress || 'Unknown',
-        city: data.cityName || 'Unknown',
-        country: data.countryName || 'Unknown',
-        region: data.regionName || 'Unknown',
+  // Try multiple APIs in sequence until one works
+  const apis = [
+    {
+      url: 'https://ipapi.co/json/',
+      parse: (data: Record<string, unknown>) => ({
+        ip: (data.ip as string) || 'Unknown',
+        city: (data.city as string) || 'Unknown',
+        country: (data.country_name as string) || 'Unknown',
+        region: (data.region as string) || 'Unknown',
+        isp: (data.org as string) || 'Unknown',
+        timezone: (data.timezone as string) || 'Unknown',
+        latitude: (data.latitude as number) || 0,
+        longitude: (data.longitude as number) || 0,
+      }),
+    },
+    {
+      url: 'https://freeipapi.com/api/json',
+      parse: (data: Record<string, unknown>) => ({
+        ip: (data.ipAddress as string) || 'Unknown',
+        city: (data.cityName as string) || 'Unknown',
+        country: (data.countryName as string) || 'Unknown',
+        region: (data.regionName as string) || 'Unknown',
         isp: data.isProxy ? 'Proxy/VPN Detected' : 'Unknown',
-        timezone: data.timeZone || 'Unknown',
-        latitude: data.latitude || 0,
-        longitude: data.longitude || 0,
-      };
-    }
-  } catch {
-    // Fallback to ip-api.com
+        timezone: (data.timeZone as string) || 'Unknown',
+        latitude: (data.latitude as number) || 0,
+        longitude: (data.longitude as number) || 0,
+      }),
+    },
+    {
+      url: 'https://ipwho.is/',
+      parse: (data: Record<string, unknown>) => ({
+        ip: (data.ip as string) || 'Unknown',
+        city: (data.city as string) || 'Unknown',
+        country: (data.country as string) || 'Unknown',
+        region: (data.region as string) || 'Unknown',
+        isp: ((data.connection as Record<string, unknown>)?.isp as string) || 'Unknown',
+        timezone: ((data.timezone as Record<string, unknown>)?.id as string) || 'Unknown',
+        latitude: (data.latitude as number) || 0,
+        longitude: (data.longitude as number) || 0,
+      }),
+    },
+  ];
+
+  for (const api of apis) {
     try {
-      const response = await fetch('http://ip-api.com/json');
+      const response = await fetch(api.url);
       if (response.ok) {
         const data = await response.json();
-        return {
-          ip: data.query || 'Unknown',
-          city: data.city || 'Unknown',
-          country: data.country || 'Unknown',
-          region: data.regionName || 'Unknown',
-          isp: data.isp || 'Unknown',
-          timezone: data.timezone || 'Unknown',
-          latitude: data.lat || 0,
-          longitude: data.lon || 0,
-        };
+        // Check if we got valid data (has IP)
+        const result = api.parse(data);
+        if (result.ip && result.ip !== 'Unknown') {
+          return result;
+        }
       }
     } catch {
-      return null;
+      // Try next API
+      continue;
     }
   }
+
   return null;
 }
 
