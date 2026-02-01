@@ -607,6 +607,7 @@ function App() {
           <p>
             Built with privacy in mind. <a href="https://github.com/andy-broyles/whatdotheyknow-app" target="_blank" rel="noopener noreferrer">View source on GitHub</a>
           </p>
+          <p style={{ marginTop: '0.5rem' }}>Thanks, Tom</p>
         </div>
       </footer>
     </>
