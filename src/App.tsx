@@ -196,7 +196,14 @@ function App() {
                     </div>
                   </>
                 ) : (
-                  <div className="card-value">Unable to fetch</div>
+                  <div className="card-details">
+                    <div className="card-value" style={{ color: 'var(--success)', marginBottom: '0.5rem' }}>
+                      Protected or Blocked
+                    </div>
+                    <p style={{ fontSize: '0.8125rem', color: 'var(--text-muted)' }}>
+                      Your browser or an extension (VPN, ad blocker, privacy tool) is blocking IP lookup requests. This is actually good for your privacy!
+                    </p>
+                  </div>
                 )}
               </div>
               <p className="card-explanation">
