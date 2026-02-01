@@ -12,9 +12,11 @@ import {
   getLocaleInfo,
   getUserAgent,
   parseUserAgent,
+  runSpeedTests,
   type IPInfo,
   type WebRTCInfo,
   type WebGLInfo,
+  type SpeedTestResult,
 } from './utils/privacy';
 
 interface PrivacyData {
@@ -30,6 +32,7 @@ interface PrivacyData {
   locale: ReturnType<typeof getLocaleInfo>;
   userAgent: string;
   parsedUA: { browser: string; os: string };
+  speedTests: SpeedTestResult[];
 }
 
 function App() {
@@ -77,9 +80,15 @@ function App() {
       locale,
       userAgent: ua,
       parsedUA,
+      speedTests: [],
     });
 
     setLoading(false);
+
+    // Run speed tests after main data is loaded (non-blocking)
+    runSpeedTests((results) => {
+      setData(prev => prev ? { ...prev, speedTests: results } : null);
+    });
   }, []);
 
   useEffect(() => {
@@ -560,6 +569,56 @@ function App() {
               </div>
               <p className="card-explanation">
                 Cookies are the primary way websites track you. Third-party cookies enable cross-site tracking by advertisers.
+              </p>
+            </div>
+
+            {/* Speed Test Card */}
+            <div className="card">
+              <div className="card-header">
+                <div className="card-title">
+                  <div className="card-icon green">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+                    </svg>
+                  </div>
+                  <h3>Connection Speed</h3>
+                </div>
+                {!loading && data?.speedTests && data.speedTests.length > 0 && data.speedTests.every(t => t.status === 'done' || t.status === 'error') && (
+                  <span className="card-status status-safe">Complete</span>
+                )}
+              </div>
+              <div className="card-content">
+                {loading || !data?.speedTests || data.speedTests.length === 0 ? (
+                  <div className="loading"><div className="spinner"></div> Preparing tests...</div>
+                ) : (
+                  <div className="card-details">
+                    {data.speedTests.map((test, i) => (
+                      <div className="card-detail" key={i}>
+                        <span className="card-detail-label">
+                          {test.server}
+                          <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginLeft: '0.5rem' }}>
+                            {test.location}
+                          </span>
+                        </span>
+                        <span className="card-detail-value">
+                          {test.status === 'pending' && <span style={{ color: 'var(--text-muted)' }}>Waiting...</span>}
+                          {test.status === 'testing' && <span className="loading" style={{ display: 'inline-flex', gap: '0.25rem' }}><span className="spinner" style={{ width: '12px', height: '12px' }}></span></span>}
+                          {test.status === 'done' && (
+                            <span style={{ 
+                              color: test.latency! < 100 ? 'var(--success)' : test.latency! < 300 ? 'var(--warning)' : 'var(--danger)'
+                            }}>
+                              {test.latency}ms
+                            </span>
+                          )}
+                          {test.status === 'error' && <span style={{ color: 'var(--danger)' }}>Failed</span>}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <p className="card-explanation">
+                Latency to major servers shows your connection quality. Websites can use timing data to estimate your location and network conditions.
               </p>
             </div>
           </div>

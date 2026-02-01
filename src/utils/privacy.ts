@@ -382,3 +382,76 @@ export function parseUserAgent(ua: string) {
 
   return { browser, os };
 }
+
+// Speed test types
+export interface SpeedTestResult {
+  server: string;
+  location: string;
+  latency: number | null;
+  status: 'pending' | 'testing' | 'done' | 'error';
+}
+
+// Test latency to a server
+async function testLatency(url: string): Promise<number | null> {
+  try {
+    const start = performance.now();
+    await fetch(url, { 
+      method: 'HEAD', 
+      mode: 'no-cors',
+      cache: 'no-store',
+    });
+    const end = performance.now();
+    return Math.round(end - start);
+  } catch {
+    return null;
+  }
+}
+
+// Run speed tests to multiple servers
+export async function runSpeedTests(
+  onUpdate: (results: SpeedTestResult[]) => void
+): Promise<SpeedTestResult[]> {
+  const servers = [
+    { url: 'https://www.google.com/favicon.ico', server: 'Google', location: 'Global CDN' },
+    { url: 'https://www.cloudflare.com/favicon.ico', server: 'Cloudflare', location: 'Global CDN' },
+    { url: 'https://aws.amazon.com/favicon.ico', server: 'Amazon AWS', location: 'US East' },
+    { url: 'https://azure.microsoft.com/favicon.ico', server: 'Microsoft Azure', location: 'Global' },
+    { url: 'https://github.com/favicon.ico', server: 'GitHub', location: 'Global CDN' },
+  ];
+
+  const results: SpeedTestResult[] = servers.map(s => ({
+    server: s.server,
+    location: s.location,
+    latency: null,
+    status: 'pending' as const,
+  }));
+
+  onUpdate([...results]);
+
+  // Test each server sequentially for more accurate results
+  for (let i = 0; i < servers.length; i++) {
+    results[i].status = 'testing';
+    onUpdate([...results]);
+
+    // Run 3 tests and take the median for more accuracy
+    const latencies: number[] = [];
+    for (let j = 0; j < 3; j++) {
+      const latency = await testLatency(servers[i].url + '?t=' + Date.now());
+      if (latency !== null) {
+        latencies.push(latency);
+      }
+    }
+
+    if (latencies.length > 0) {
+      latencies.sort((a, b) => a - b);
+      results[i].latency = latencies[Math.floor(latencies.length / 2)];
+      results[i].status = 'done';
+    } else {
+      results[i].status = 'error';
+    }
+
+    onUpdate([...results]);
+  }
+
+  return results;
+}
