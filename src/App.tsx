@@ -564,37 +564,6 @@ function App() {
             </div>
           </div>
 
-          {/* VPN Section */}
-          <section className="vpn-section">
-            <h2>Protect Your Privacy</h2>
-            <p>Consider using a VPN to hide your real IP address and encrypt your internet traffic.</p>
-            <div className="vpn-links">
-              <a href="https://nordvpn.com" target="_blank" rel="noopener noreferrer" className="vpn-link">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-                </svg>
-                NordVPN
-              </a>
-              <a href="https://www.expressvpn.com" target="_blank" rel="noopener noreferrer" className="vpn-link">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-                </svg>
-                ExpressVPN
-              </a>
-              <a href="https://surfshark.com" target="_blank" rel="noopener noreferrer" className="vpn-link">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-                </svg>
-                Surfshark
-              </a>
-              <a href="https://protonvpn.com" target="_blank" rel="noopener noreferrer" className="vpn-link">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-                </svg>
-                ProtonVPN
-              </a>
-            </div>
-          </section>
         </div>
       </main>
 
