@@ -213,6 +213,8 @@ body {
   padding: 1.5rem;
   box-shadow: var(--shadow);
   transition: all 0.2s ease;
+  display: flex;
+  flex-direction: column;
 }
 
 .card:hover {
@@ -267,6 +269,7 @@ body {
 
 .card-content {
   margin-bottom: 1rem;
+  flex: 1;
 }
 
 .card-value {
@@ -313,6 +316,7 @@ body {
   padding-top: 1rem;
   border-top: 1px solid var(--border-color);
   line-height: 1.5;
+  margin-top: auto;
 }
 
 /* Loading State */
