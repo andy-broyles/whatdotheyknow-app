@@ -293,7 +293,7 @@ export async function detectAdBlocker(): Promise<boolean> {
 
     document.body.removeChild(bait);
 
-    // Also try to fetch a known ad script
+    // Try to fetch a known ad script
     try {
       await fetch('https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js', {
         method: 'HEAD',
@@ -381,6 +381,63 @@ export function parseUserAgent(ua: string) {
   else if (ua.includes('iOS') || ua.includes('iPhone') || ua.includes('iPad')) os = 'iOS';
 
   return { browser, os };
+}
+
+// Network / connection (Network Information API)
+export interface ConnectionInfo {
+  effectiveType: string | null;
+  downlink: number | null;
+  rtt: number | null;
+  saveData: boolean | null;
+}
+
+export function getConnectionInfo(): ConnectionInfo | null {
+  const nav = navigator as Navigator & { connection?: { effectiveType?: string; downlink?: number; rtt?: number; saveData?: boolean } };
+  if (!nav.connection) return null;
+  const c = nav.connection;
+  return {
+    effectiveType: c.effectiveType ?? null,
+    downlink: c.downlink ?? null,
+    rtt: c.rtt ?? null,
+    saveData: c.saveData ?? null,
+  };
+}
+
+// Hardware (fingerprint signals)
+export function getHardwareInfo() {
+  const nav = navigator as Navigator & { deviceMemory?: number };
+  return {
+    hardwareConcurrency: navigator.hardwareConcurrency ?? null,
+    deviceMemory: nav.deviceMemory ?? null,
+  };
+}
+
+// Referrer (where you came from)
+export function getReferrer(): string {
+  const r = document.referrer;
+  return r || '(none or blocked)';
+}
+
+// Do Not Track
+export function getDoNotTrack(): string {
+  const dnt = navigator.doNotTrack ?? (navigator as Navigator & { msDoNotTrack?: string }).msDoNotTrack;
+  if (dnt === '1') return 'Yes';
+  if (dnt === '0') return 'No';
+  return 'Not set';
+}
+
+// Storage estimate (quota / usage for tracking storage)
+export async function getStorageEstimate(): Promise<{ quota: number; usage: number; usagePercent: string } | null> {
+  try {
+    if (!navigator.storage?.estimate) return null;
+    const est = await navigator.storage.estimate();
+    const quota = Number(est.quota ?? 0);
+    const usage = Number(est.usage ?? 0);
+    const usagePercent = quota > 0 ? ((usage / quota) * 100).toFixed(1) + '%' : '—';
+    return { quota, usage, usagePercent };
+  } catch {
+    return null;
+  }
 }
 
 // Speed test types

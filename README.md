@@ -18,6 +18,12 @@ A privacy tool that shows you what information websites can collect about you ju
 - **Timezone & Language** - System locale information
 - **User Agent** - Browser and OS details
 - **Connection Speed** - Latency to Google, Cloudflare, AWS, Azure, GitHub
+- **Network / Connection** - Effective type, downlink, RTT, data saver (Network Information API)
+- **Hardware** - CPU cores, device memory (fingerprint signals)
+- **Referrer** - Which URL or site sent you here
+- **Do Not Track** - Whether your browser requests no tracking
+- **Storage (quota)** - How much storage is available/used for the origin
+- **Copy report** - Export all results to clipboard as text
 
 ## Privacy
 

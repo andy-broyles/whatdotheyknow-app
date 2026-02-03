@@ -13,9 +13,15 @@ import {
   getUserAgent,
   parseUserAgent,
   runSpeedTests,
+  getConnectionInfo,
+  getHardwareInfo,
+  getReferrer,
+  getDoNotTrack,
+  getStorageEstimate,
   type IPInfo,
   type WebRTCInfo,
   type WebGLInfo,
+  type ConnectionInfo,
   type SpeedTestResult,
 } from './utils/privacy';
 
@@ -33,6 +39,11 @@ interface PrivacyData {
   userAgent: string;
   parsedUA: { browser: string; os: string };
   speedTests: SpeedTestResult[];
+  connection: ConnectionInfo | null;
+  hardware: ReturnType<typeof getHardwareInfo>;
+  referrer: string;
+  doNotTrack: string;
+  storageEstimate: { quota: number; usage: number; usagePercent: string } | null;
 }
 
 function App() {
@@ -44,6 +55,7 @@ function App() {
   });
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<PrivacyData | null>(null);
+  const [copyStatus, setCopyStatus] = useState<'idle' | 'copied' | 'error'>('idle');
 
   const collectData = useCallback(async () => {
     setLoading(true);
@@ -66,6 +78,11 @@ function App() {
     const screen = getScreenInfo();
     const locale = getLocaleInfo();
     const parsedUA = parseUserAgent(ua);
+    const connection = getConnectionInfo();
+    const hardware = getHardwareInfo();
+    const referrer = getReferrer();
+    const doNotTrack = getDoNotTrack();
+    const storageEstimate = await getStorageEstimate();
 
     setData({
       ipInfo,
@@ -81,6 +98,11 @@ function App() {
       userAgent: ua,
       parsedUA,
       speedTests: [],
+      connection,
+      hardware,
+      referrer,
+      doNotTrack,
+      storageEstimate,
     });
 
     setLoading(false);
@@ -91,27 +113,8 @@ function App() {
     });
   }, []);
 
-  // Defer heavy detection until after first paint to avoid blocking LCP and reduce reflows
   useEffect(() => {
-    let idleId: number | undefined;
-    let timeoutId: ReturnType<typeof setTimeout> | undefined;
-    const runAfterPaint = () => {
-      if ('requestIdleCallback' in window) {
-        idleId = window.requestIdleCallback(collectData, { timeout: 2000 });
-      } else {
-        timeoutId = setTimeout(collectData, 0);
-      }
-    };
-    if (document.readyState === 'complete') {
-      runAfterPaint();
-    } else {
-      window.addEventListener('load', runAfterPaint);
-    }
-    return () => {
-      window.removeEventListener('load', runAfterPaint);
-      if (idleId !== undefined && 'cancelIdleCallback' in window) window.cancelIdleCallback(idleId);
-      if (timeoutId !== undefined) clearTimeout(timeoutId);
-    };
+    collectData();
   }, [collectData]);
 
   useEffect(() => {
@@ -120,6 +123,46 @@ function App() {
 
   const handleRefresh = () => {
     collectData();
+  };
+
+  const formatStorageBytes = (n: number) =>
+    n < 1024 ? n + ' B' : n < 1024 * 1024 ? (n / 1024).toFixed(1) + ' KB' : (n / (1024 * 1024)).toFixed(1) + ' MB';
+
+  const handleCopyReport = async () => {
+    if (!data) return;
+    const lines: string[] = [
+      '— What Do They Know? — Privacy Report',
+      '',
+      'IP & Location: ' + (data.ipInfo ? `${data.ipInfo.ip} | ${data.ipInfo.city}, ${data.ipInfo.region}, ${data.ipInfo.country} | ${data.ipInfo.isp}` : 'Protected or blocked'),
+      'Browser Fingerprint: ' + data.fingerprint,
+      'Canvas Fingerprint: ' + data.canvasFingerprint,
+      'User Agent: ' + data.parsedUA.browser + ' / ' + data.parsedUA.os,
+      'Screen: ' + data.screen.width + '×' + data.screen.height + ', ' + data.screen.colorDepth + '-bit, ' + data.screen.pixelRatio + 'x',
+      'Timezone: ' + data.locale.timezone + ' | Language: ' + data.locale.language,
+      'WebGL: ' + (data.webgl.available ? data.webgl.vendor + ' / ' + data.webgl.renderer : 'N/A'),
+      'WebRTC: ' + (data.webrtc.leaking ? 'IPs exposed' : 'No leaks'),
+      'Fonts detected: ' + data.fonts.length,
+      'Ad blocker: ' + (data.adBlocker ? 'Yes' : 'No'),
+      'Cookies: ' + (data.cookies.enabled ? 'Enabled' : 'Disabled') + ' | Third-party: ' + data.cookies.thirdParty,
+      'Connection: ' + (data.connection ? `Type ${data.connection.effectiveType ?? '?'}, downlink ${data.connection.downlink ?? '?'} Mbps, RTT ${data.connection.rtt ?? '?'} ms, saveData ${data.connection.saveData}` : 'N/A'),
+      'Hardware: ' + data.hardware.hardwareConcurrency + ' cores' + (data.hardware.deviceMemory != null ? ', ~' + data.hardware.deviceMemory + ' GB RAM' : ''),
+      'Referrer: ' + data.referrer,
+      'Do Not Track: ' + data.doNotTrack,
+      'Storage: ' + (data.storageEstimate ? `${formatStorageBytes(data.storageEstimate.usage)} / ${formatStorageBytes(data.storageEstimate.quota)} (${data.storageEstimate.usagePercent})` : 'N/A'),
+    ];
+    if (data.speedTests?.length) {
+      lines.push('', 'Speed tests:');
+      data.speedTests.forEach(t => lines.push(`  ${t.server} (${t.location}): ${t.latency != null ? t.latency + ' ms' : 'Failed'}`));
+    }
+    lines.push('', 'Generated at whatdotheyknow.app — 100% client-side, no data stored.');
+    try {
+      await navigator.clipboard.writeText(lines.join('\n'));
+      setCopyStatus('copied');
+      setTimeout(() => setCopyStatus('idle'), 2000);
+    } catch {
+      setCopyStatus('error');
+      setTimeout(() => setCopyStatus('idle'), 2000);
+    }
   };
 
   return (
@@ -143,6 +186,13 @@ function App() {
             What Do They Know?
           </a>
           <div className="header-actions">
+            <button className="btn btn-secondary" onClick={handleCopyReport} disabled={loading || !data} title="Copy full report to clipboard">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+              </svg>
+              {copyStatus === 'copied' ? 'Copied!' : copyStatus === 'error' ? 'Failed' : 'Copy report'}
+            </button>
             <button className="btn btn-primary" onClick={handleRefresh} disabled={loading}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M23 4v6h-6M1 20v-6h6"/>
@@ -639,6 +689,183 @@ function App() {
               </div>
               <p className="card-explanation">
                 Latency to major servers shows your connection quality. Websites can use timing data to estimate your location and network conditions.
+              </p>
+            </div>
+
+            {/* Connection / Network Card */}
+            <div className="card">
+              <div className="card-header">
+                <div className="card-title">
+                  <div className="card-icon blue">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M5 12h14M12 5l7 7-7 7"/>
+                    </svg>
+                  </div>
+                  <h3>Network / Connection</h3>
+                </div>
+              </div>
+              <div className="card-content">
+                {loading ? (
+                  <div className="loading"><div className="spinner"></div> Loading...</div>
+                ) : data?.connection ? (
+                  <div className="card-details">
+                    <div className="card-detail">
+                      <span className="card-detail-label">Effective type</span>
+                      <span className="card-detail-value">{data.connection.effectiveType ?? 'Unknown'}</span>
+                    </div>
+                    <div className="card-detail">
+                      <span className="card-detail-label">Downlink</span>
+                      <span className="card-detail-value">{data.connection.downlink != null ? data.connection.downlink + ' Mbps' : '—'}</span>
+                    </div>
+                    <div className="card-detail">
+                      <span className="card-detail-label">RTT</span>
+                      <span className="card-detail-value">{data.connection.rtt != null ? data.connection.rtt + ' ms' : '—'}</span>
+                    </div>
+                    <div className="card-detail">
+                      <span className="card-detail-label">Data saver</span>
+                      <span className="card-detail-value">{data.connection.saveData === true ? 'On' : data.connection.saveData === false ? 'Off' : '—'}</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="card-value">Not available</div>
+                )}
+              </div>
+              <p className="card-explanation">
+                The Network Information API reveals your connection type (4g, wifi, etc.) and quality. Used for fingerprinting and serving different content by connection.
+              </p>
+            </div>
+
+            {/* Hardware Card */}
+            <div className="card">
+              <div className="card-header">
+                <div className="card-title">
+                  <div className="card-icon purple">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <rect x="4" y="4" width="16" height="16" rx="2" ry="2"/>
+                      <rect x="9" y="9" width="6" height="6"/>
+                      <line x1="9" y1="1" x2="9" y2="4"/>
+                      <line x1="15" y1="1" x2="15" y2="4"/>
+                      <line x1="9" y1="20" x2="9" y2="23"/>
+                      <line x1="15" y1="20" x2="15" y2="23"/>
+                    </svg>
+                  </div>
+                  <h3>Hardware</h3>
+                </div>
+                <span className="card-status status-warning">Fingerprint</span>
+              </div>
+              <div className="card-content">
+                {loading ? (
+                  <div className="loading"><div className="spinner"></div> Loading...</div>
+                ) : (
+                  <div className="card-details">
+                    <div className="card-detail">
+                      <span className="card-detail-label">CPU cores</span>
+                      <span className="card-detail-value">{data?.hardware.hardwareConcurrency ?? 'Unknown'}</span>
+                    </div>
+                    <div className="card-detail">
+                      <span className="card-detail-label">Device memory</span>
+                      <span className="card-detail-value">{data?.hardware.deviceMemory != null ? '~' + data.hardware.deviceMemory + ' GB' : 'Not reported'}</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+              <p className="card-explanation">
+                CPU core count and approximate RAM are exposed to scripts. Together with other signals they help build a unique device fingerprint.
+              </p>
+            </div>
+
+            {/* Referrer Card */}
+            <div className="card">
+              <div className="card-header">
+                <div className="card-title">
+                  <div className="card-icon yellow">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                      <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+                    </svg>
+                  </div>
+                  <h3>Referrer</h3>
+                </div>
+              </div>
+              <div className="card-content">
+                {loading ? (
+                  <div className="loading"><div className="spinner"></div> Loading...</div>
+                ) : (
+                  <div className="card-value mono" style={{ fontSize: '0.8125rem' }}>{data?.referrer}</div>
+                )}
+              </div>
+              <p className="card-explanation">
+                The referrer header tells this page which site or URL sent you here. It can leak your browsing path; many privacy tools strip it.
+              </p>
+            </div>
+
+            {/* Do Not Track Card */}
+            <div className="card">
+              <div className="card-header">
+                <div className="card-title">
+                  <div className="card-icon green">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                    </svg>
+                  </div>
+                  <h3>Do Not Track</h3>
+                </div>
+                {!loading && (
+                  <span className={`card-status ${data?.doNotTrack === 'Yes' ? 'status-safe' : 'status-warning'}`}>
+                    {data?.doNotTrack}
+                  </span>
+                )}
+              </div>
+              <div className="card-content">
+                {loading ? (
+                  <div className="loading"><div className="spinner"></div> Loading...</div>
+                ) : (
+                  <div className="card-value">{data?.doNotTrack}</div>
+                )}
+              </div>
+              <p className="card-explanation">
+                Do Not Track is a browser setting asking sites not to track you. Most sites ignore it; it is not legally enforced.
+              </p>
+            </div>
+
+            {/* Storage Estimate Card */}
+            <div className="card">
+              <div className="card-header">
+                <div className="card-title">
+                  <div className="card-icon blue">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <ellipse cx="12" cy="5" rx="9" ry="3"/>
+                      <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/>
+                      <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>
+                    </svg>
+                  </div>
+                  <h3>Storage (quota)</h3>
+                </div>
+              </div>
+              <div className="card-content">
+                {loading ? (
+                  <div className="loading"><div className="spinner"></div> Loading...</div>
+                ) : data?.storageEstimate ? (
+                  <div className="card-details">
+                    <div className="card-detail">
+                      <span className="card-detail-label">Usage</span>
+                      <span className="card-detail-value">{formatStorageBytes(data.storageEstimate.usage)}</span>
+                    </div>
+                    <div className="card-detail">
+                      <span className="card-detail-label">Quota</span>
+                      <span className="card-detail-value">{formatStorageBytes(data.storageEstimate.quota)}</span>
+                    </div>
+                    <div className="card-detail">
+                      <span className="card-detail-label">Used</span>
+                      <span className="card-detail-value">{data.storageEstimate.usagePercent}</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="card-value">Not available</div>
+                )}
+              </div>
+              <p className="card-explanation">
+                Browsers expose how much storage (cookies, localStorage, etc.) is available and used. Sites use this to decide how much tracking data to store.
               </p>
             </div>
           </div>
