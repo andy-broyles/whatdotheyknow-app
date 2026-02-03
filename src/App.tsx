@@ -91,8 +91,27 @@ function App() {
     });
   }, []);
 
+  // Defer heavy detection until after first paint to avoid blocking LCP and reduce reflows
   useEffect(() => {
-    collectData();
+    let idleId: number | undefined;
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    const runAfterPaint = () => {
+      if ('requestIdleCallback' in window) {
+        idleId = window.requestIdleCallback(collectData, { timeout: 2000 });
+      } else {
+        timeoutId = setTimeout(collectData, 0);
+      }
+    };
+    if (document.readyState === 'complete') {
+      runAfterPaint();
+    } else {
+      window.addEventListener('load', runAfterPaint);
+    }
+    return () => {
+      window.removeEventListener('load', runAfterPaint);
+      if (idleId !== undefined && 'cancelIdleCallback' in window) window.cancelIdleCallback(idleId);
+      if (timeoutId !== undefined) clearTimeout(timeoutId);
+    };
   }, [collectData]);
 
   useEffect(() => {
