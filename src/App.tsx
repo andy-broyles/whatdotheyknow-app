@@ -46,6 +46,18 @@ interface PrivacyData {
   storageEstimate: { quota: number; usage: number; usagePercent: string } | null;
 }
 
+function CardInfo({ text }: { text: string }) {
+  return (
+    <button type="button" className="info-trigger" title="How is this calculated?" aria-label="How is this calculated?">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+        <circle cx="12" cy="12" r="10"/>
+        <path d="M12 16v-4M12 8h.01"/>
+      </svg>
+      <span className="info-tooltip" role="tooltip">{text}</span>
+    </button>
+  );
+}
+
 function App() {
   const [darkMode, setDarkMode] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -246,7 +258,7 @@ function App() {
                       <path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
                     </svg>
                   </div>
-                  <h3>IP Address & Location</h3>
+                  <h3>IP Address & Location<CardInfo text="We request your IP from a third-party API (ipapi.co, freeipapi.com, or ipwho.is). Your browser sends the request; the API returns your IP and approximate location." /></h3>
                 </div>
               </div>
               <div className="card-content">
@@ -299,7 +311,7 @@ function App() {
                       <path d="M12 11c0 3.517-1.009 6.799-2.753 9.571m-3.44-2.04l.054-.09A13.916 13.916 0 008 11a4 4 0 118 0c0 1.017-.07 2.019-.203 3m-2.118 6.844A21.88 21.88 0 0015.171 17m3.839 1.132c.645-2.266.99-4.659.99-7.132A8 8 0 008 4.07M3 15.364c.64-1.319 1-2.8 1-4.364 0-1.457.39-2.823 1.07-4"/>
                     </svg>
                   </div>
-                  <h3>Browser Fingerprint</h3>
+                  <h3>Browser Fingerprint<CardInfo text="FingerprintJS runs in your browser and combines many signals (canvas, WebGL, fonts, etc.) into a single hash. No data is sent to a server." /></h3>
                 </div>
                 <span className="card-status status-warning">Unique ID</span>
               </div>
@@ -325,7 +337,7 @@ function App() {
                       <path d="M8 21h8M12 17v4"/>
                     </svg>
                   </div>
-                  <h3>User Agent</h3>
+                  <h3>User Agent<CardInfo text="Read directly from navigator.userAgent. Your browser sends this string with every request." /></h3>
                 </div>
               </div>
               <div className="card-content">
@@ -362,7 +374,7 @@ function App() {
                       <path d="M8 21h8M12 17v4"/>
                     </svg>
                   </div>
-                  <h3>Screen & Display</h3>
+                  <h3>Screen & Display<CardInfo text="Read from window.screen: width, height, availWidth, availHeight, colorDepth, and devicePixelRatio." /></h3>
                 </div>
               </div>
               <div className="card-content">
@@ -404,7 +416,7 @@ function App() {
                       <path d="M12 6v6l4 2"/>
                     </svg>
                   </div>
-                  <h3>Timezone & Language</h3>
+                  <h3>Timezone & Language<CardInfo text="From Intl.DateTimeFormat().resolvedOptions().timeZone and navigator.language / navigator.languages." /></h3>
                 </div>
               </div>
               <div className="card-content">
@@ -443,7 +455,7 @@ function App() {
                       <path d="M21 15l-5-5L5 21"/>
                     </svg>
                   </div>
-                  <h3>Canvas Fingerprint</h3>
+                  <h3>Canvas Fingerprint<CardInfo text="We draw shapes and text to an off-screen canvas, then hash the pixel data. Small rendering differences create a unique value." /></h3>
                 </div>
                 <span className="card-status status-warning">Trackable</span>
               </div>
@@ -470,7 +482,7 @@ function App() {
                       <polyline points="2 12 12 17 22 12"/>
                     </svg>
                   </div>
-                  <h3>WebGL Info</h3>
+                  <h3>WebGL Info<CardInfo text="We create a WebGL context and read UNMASKED_VENDOR_WEBGL and UNMASKED_RENDERER_WEBGL (GPU info)." /></h3>
                 </div>
               </div>
               <div className="card-content">
@@ -507,7 +519,7 @@ function App() {
                       <line x1="12" y1="17" x2="12.01" y2="17"/>
                     </svg>
                   </div>
-                  <h3>WebRTC Leak Test</h3>
+                  <h3>WebRTC Leak Test<CardInfo text="We create a temporary RTCPeerConnection with a STUN server. ICE candidates may reveal your local or public IPs." /></h3>
                 </div>
                 {!loading && (
                   <span className={`card-status ${data?.webrtc.leaking ? 'status-danger' : 'status-safe'}`}>
@@ -547,7 +559,7 @@ function App() {
                       <line x1="12" y1="4" x2="12" y2="20"/>
                     </svg>
                   </div>
-                  <h3>Detected Fonts</h3>
+                  <h3>Detected Fonts<CardInfo text="We measure the rendered width of a test string in many font families. If the width differs from the fallback, that font is likely installed." /></h3>
                 </div>
                 <span className="card-status status-warning">{data?.fonts.length || 0} found</span>
               </div>
@@ -581,7 +593,7 @@ function App() {
                       <line x1="15" y1="9" x2="9" y2="15"/>
                     </svg>
                   </div>
-                  <h3>Ad Blocker</h3>
+                  <h3>Ad Blocker<CardInfo text="We add a hidden element with ad-like class names and try to fetch a known ad script. If the element is hidden or the fetch fails, an ad blocker may be active." /></h3>
                 </div>
                 {!loading && (
                   <span className={`card-status ${data?.adBlocker ? 'status-safe' : 'status-warning'}`}>
@@ -616,7 +628,7 @@ function App() {
                       <circle cx="16" cy="14" r="1"/>
                     </svg>
                   </div>
-                  <h3>Cookie Status</h3>
+                  <h3>Cookie Status<CardInfo text="navigator.cookieEnabled; we try to set a test cookie with SameSite=None; Secure and check if it's present." /></h3>
                 </div>
               </div>
               <div className="card-content">
@@ -651,7 +663,7 @@ function App() {
                       <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
                     </svg>
                   </div>
-                  <h3>Connection Speed</h3>
+                  <h3>Connection Speed<CardInfo text="We request a small resource from each server 3 times and take the median round-trip time (latency) in milliseconds." /></h3>
                 </div>
                 {!loading && data?.speedTests && data.speedTests.length > 0 && data.speedTests.every(t => t.status === 'done' || t.status === 'error') && (
                   <span className="card-status status-safe">Complete</span>
@@ -701,7 +713,7 @@ function App() {
                       <path d="M5 12h14M12 5l7 7-7 7"/>
                     </svg>
                   </div>
-                  <h3>Network / Connection</h3>
+                  <h3>Network / Connection<CardInfo text="From the Network Information API (navigator.connection): effectiveType, downlink, rtt, saveData. Not supported in all browsers." /></h3>
                 </div>
               </div>
               <div className="card-content">
@@ -749,7 +761,7 @@ function App() {
                       <line x1="15" y1="20" x2="15" y2="23"/>
                     </svg>
                   </div>
-                  <h3>Hardware</h3>
+                  <h3>Hardware<CardInfo text="navigator.hardwareConcurrency (CPU cores) and navigator.deviceMemory (approx. RAM in GB, Chrome only)." /></h3>
                 </div>
                 <span className="card-status status-warning">Fingerprint</span>
               </div>
@@ -784,7 +796,7 @@ function App() {
                       <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
                     </svg>
                   </div>
-                  <h3>Referrer</h3>
+                  <h3>Referrer<CardInfo text="document.referrer — the URL of the page that linked here, or empty if you came directly or it was blocked." /></h3>
                 </div>
               </div>
               <div className="card-content">
@@ -808,7 +820,7 @@ function App() {
                       <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
                     </svg>
                   </div>
-                  <h3>Do Not Track</h3>
+                  <h3>Do Not Track<CardInfo text="navigator.doNotTrack (or msDoNotTrack) — your browser's Do Not Track setting. Most sites ignore it." /></h3>
                 </div>
                 {!loading && (
                   <span className={`card-status ${data?.doNotTrack === 'Yes' ? 'status-safe' : 'status-warning'}`}>
@@ -839,7 +851,7 @@ function App() {
                       <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>
                     </svg>
                   </div>
-                  <h3>Storage (quota)</h3>
+                  <h3>Storage (quota)<CardInfo text="navigator.storage.estimate() returns quota and usage in bytes for this origin (cookies, localStorage, etc.)." /></h3>
                 </div>
               </div>
               <div className="card-content">
