@@ -3,14 +3,14 @@
   --bg-secondary: #f8fafc;
   --bg-card: #ffffff;
   --text-primary: #0f172a;
-  --text-secondary: #475569;
-  --text-muted: #94a3b8;
+  --text-secondary: #334155;
+  --text-muted: #475569;
   --border-color: #e2e8f0;
-  --accent: #6366f1;
-  --accent-hover: #4f46e5;
-  --success: #10b981;
-  --warning: #f59e0b;
-  --danger: #ef4444;
+  --accent: #4f46e5;
+  --accent-hover: #4338ca;
+  --success: #047857;
+  --warning: #b45309;
+  --danger: #b91c1c;
   --shadow: 0 1px 3px rgba(0, 0, 0, 0.1), 0 1px 2px rgba(0, 0, 0, 0.06);
   --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
 }
@@ -21,8 +21,13 @@
   --bg-card: #1e293b;
   --text-primary: #f1f5f9;
   --text-secondary: #cbd5e1;
-  --text-muted: #64748b;
+  --text-muted: #94a3b8;
   --border-color: #334155;
+  --accent: #818cf8;
+  --accent-hover: #a5b4fc;
+  --success: #34d399;
+  --warning: #fbbf24;
+  --danger: #f87171;
   --shadow: 0 1px 3px rgba(0, 0, 0, 0.3), 0 1px 2px rgba(0, 0, 0, 0.2);
   --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.3), 0 4px 6px -2px rgba(0, 0, 0, 0.2);
 }
@@ -271,9 +276,13 @@ body {
   font-weight: 500;
 }
 
-.status-safe { background: rgba(16, 185, 129, 0.1); color: var(--success); }
-.status-warning { background: rgba(245, 158, 11, 0.1); color: var(--warning); }
-.status-danger { background: rgba(239, 68, 68, 0.1); color: var(--danger); }
+.status-safe { background: rgba(4, 120, 87, 0.15); color: var(--success); }
+.status-warning { background: rgba(180, 83, 9, 0.15); color: var(--warning); }
+.status-danger { background: rgba(185, 28, 28, 0.15); color: var(--danger); }
+
+[data-theme="dark"] .status-safe { background: rgba(52, 211, 153, 0.2); }
+[data-theme="dark"] .status-warning { background: rgba(251, 191, 36, 0.2); }
+[data-theme="dark"] .status-danger { background: rgba(248, 113, 113, 0.2); }
 
 .card-content {
   margin-bottom: 1rem;
@@ -422,17 +431,18 @@ body {
 }
 
 .footer p {
-  color: var(--text-muted);
+  color: var(--text-secondary);
   font-size: 0.875rem;
 }
 
 .footer a {
   color: var(--accent);
-  text-decoration: none;
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
 }
 
 .footer a:hover {
-  text-decoration: underline;
+  color: var(--accent-hover);
 }
 
 /* Scrollbar */
