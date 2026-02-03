@@ -108,8 +108,8 @@ function App() {
       {/* Header */}
       <header className="header">
         <div className="container header-content">
-          <a href="/" className="logo">
-            <svg className="logo-icon" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <a href="/" className="logo" aria-label="What Do They Know? Home">
+            <svg className="logo-icon" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
               <defs>
                 <linearGradient id="logoGrad" x1="0%" y1="0%" x2="100%" y2="100%">
                   <stop offset="0%" stopColor="#6366f1"/>
@@ -165,6 +165,7 @@ function App() {
       {/* Main Content */}
       <main className="main">
         <div className="container">
+          <h2 className="section-heading">What websites can see about you</h2>
           <div className="cards-grid">
             {/* IP Address Card */}
             <div className="card">

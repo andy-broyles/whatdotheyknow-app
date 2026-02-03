@@ -17,6 +17,7 @@ A privacy tool that shows you what information websites can collect about you ju
 - **Screen & Display** - Resolution, color depth, and pixel ratio
 - **Timezone & Language** - System locale information
 - **User Agent** - Browser and OS details
+- **Connection Speed** - Latency to Google, Cloudflare, AWS, Azure, GitHub
 
 ## Privacy
 
@@ -41,6 +42,10 @@ npm run dev
 # Build for production
 npm run build
 ```
+
+## SEO
+
+Optimized per [Google's SEO Starter Guide](https://developers.google.com/search/docs/fundamentals/seo-starter-guide): canonical URL, meta description, Open Graph & Twitter cards, JSON-LD structured data (WebApplication), semantic heading hierarchy (h1 → h2 → h3), `robots.txt`, and `sitemap.xml`.
 
 ## Deployment
 
