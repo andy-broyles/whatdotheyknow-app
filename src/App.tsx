@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { Analytics } from '@vercel/analytics/react';
 import {
   getIPInfo,
   getBrowserFingerprint,
@@ -897,6 +898,7 @@ function App() {
           <p style={{ marginTop: '0.5rem' }}>Thanks, Tom</p>
         </div>
       </footer>
+      <Analytics />
     </>
   );
 }
