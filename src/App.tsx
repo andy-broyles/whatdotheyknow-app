@@ -18,6 +18,7 @@ import {
   getHardwareInfo,
   getReferrer,
   getDoNotTrack,
+  getGlobalPrivacyControl,
   getStorageEstimate,
   type IPInfo,
   type WebRTCInfo,
@@ -34,7 +35,7 @@ interface PrivacyData {
   webrtc: WebRTCInfo;
   fonts: string[];
   adBlocker: boolean;
-  cookies: { enabled: boolean; thirdParty: string };
+  cookies: { enabled: boolean; firstPartyWrite: string; thirdParty: string };
   screen: ReturnType<typeof getScreenInfo>;
   locale: ReturnType<typeof getLocaleInfo>;
   userAgent: string;
@@ -44,6 +45,7 @@ interface PrivacyData {
   hardware: ReturnType<typeof getHardwareInfo>;
   referrer: string;
   doNotTrack: string;
+  gpc: string;
   storageEstimate: { quota: number; usage: number; usagePercent: string } | null;
 }
 
@@ -95,6 +97,7 @@ function App() {
     const hardware = getHardwareInfo();
     const referrer = getReferrer();
     const doNotTrack = getDoNotTrack();
+    const gpc = getGlobalPrivacyControl();
     const storageEstimate = await getStorageEstimate();
 
     setData({
@@ -115,6 +118,7 @@ function App() {
       hardware,
       referrer,
       doNotTrack,
+      gpc,
       storageEstimate,
     });
 
@@ -153,21 +157,24 @@ function App() {
       'Screen: ' + data.screen.width + '×' + data.screen.height + ', ' + data.screen.colorDepth + '-bit, ' + data.screen.pixelRatio + 'x',
       'Timezone: ' + data.locale.timezone + ' | Language: ' + data.locale.language,
       'WebGL: ' + (data.webgl.available ? data.webgl.vendor + ' / ' + data.webgl.renderer : 'N/A'),
-      'WebRTC: ' + (data.webrtc.leaking ? 'IPs exposed' : 'No leaks'),
+      'WebRTC: ' + (data.webrtc.leaking ? 'Public IP exposed: ' + data.webrtc.publicIPs.join(', ') : 'No public IP exposed') +
+        (data.webrtc.localIPs.length || data.webrtc.mdnsCandidates.length
+          ? ' | Local candidates: ' + [...data.webrtc.localIPs, ...data.webrtc.mdnsCandidates].join(', ')
+          : ''),
       'Fonts detected: ' + data.fonts.length,
       'Ad blocker: ' + (data.adBlocker ? 'Yes' : 'No'),
-      'Cookies: ' + (data.cookies.enabled ? 'Enabled' : 'Disabled') + ' | Third-party: ' + data.cookies.thirdParty,
+      'Cookies: ' + (data.cookies.enabled ? 'Enabled' : 'Disabled') + ' | First-party write: ' + data.cookies.firstPartyWrite + ' | Third-party: ' + data.cookies.thirdParty,
       'Connection: ' + (data.connection ? `Type ${data.connection.effectiveType ?? '?'}, downlink ${data.connection.downlink ?? '?'} Mbps, RTT ${data.connection.rtt ?? '?'} ms, saveData ${data.connection.saveData}` : 'N/A'),
       'Hardware: ' + data.hardware.hardwareConcurrency + ' cores' + (data.hardware.deviceMemory != null ? ', ~' + data.hardware.deviceMemory + ' GB RAM' : ''),
       'Referrer: ' + data.referrer,
-      'Do Not Track: ' + data.doNotTrack,
+      'Do Not Track: ' + data.doNotTrack + ' | Global Privacy Control: ' + data.gpc,
       'Storage: ' + (data.storageEstimate ? `${formatStorageBytes(data.storageEstimate.usage)} / ${formatStorageBytes(data.storageEstimate.quota)} (${data.storageEstimate.usagePercent})` : 'N/A'),
     ];
     if (data.speedTests?.length) {
       lines.push('', 'Speed tests:');
       data.speedTests.forEach(t => lines.push(`  ${t.server} (${t.location}): ${t.latency != null ? t.latency + ' ms' : 'Failed'}`));
     }
-    lines.push('', 'Generated at whatdotheyknow.app — 100% client-side, no data stored.');
+    lines.push('', 'Generated at whatdotheyknow.app — nothing stored or logged by this site.');
     try {
       await navigator.clipboard.writeText(lines.join('\n'));
       setCopyStatus('copied');
@@ -233,13 +240,13 @@ function App() {
       <section className="hero">
         <div className="container">
           <h1>What the Internet Knows About You</h1>
-          <p>See exactly what information websites can collect about you just by visiting them. No data is stored or sent anywhere.</p>
+          <p>See exactly what information websites can collect about you just by visiting them. This site stores nothing and has no analytics.</p>
           <div className="privacy-badge">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
               <path d="M9 12l2 2 4-4"/>
             </svg>
-            100% Client-Side — Your data never leaves your browser
+            Nothing is stored or logged — IP &amp; latency tests contact third-party servers (see each card's ⓘ)
           </div>
         </div>
       </section>
@@ -520,11 +527,11 @@ function App() {
                       <line x1="12" y1="17" x2="12.01" y2="17"/>
                     </svg>
                   </div>
-                  <h3>WebRTC Leak Test<CardInfo text="We create a temporary RTCPeerConnection with a STUN server. ICE candidates may reveal your local or public IPs." /></h3>
+                  <h3>WebRTC Leak Test<CardInfo text="We create a temporary RTCPeerConnection with a STUN server (stun.l.google.com). ICE candidates may reveal IPs. Only a public IP counts as a leak — local-network IPs and mDNS (.local) names are visible to scripts but don't identify you on the internet." /></h3>
                 </div>
                 {!loading && (
                   <span className={`card-status ${data?.webrtc.leaking ? 'status-danger' : 'status-safe'}`}>
-                    {data?.webrtc.leaking ? 'Leaking!' : 'Protected'}
+                    {data?.webrtc.leaking ? 'Public IP exposed' : 'No leak'}
                   </span>
                 )}
               </div>
@@ -533,19 +540,35 @@ function App() {
                   <div className="loading"><div className="spinner"></div> Testing...</div>
                 ) : data?.webrtc.leaking ? (
                   <>
-                    <div className="card-value" style={{ color: 'var(--danger)' }}>IPs Exposed</div>
+                    <div className="card-value" style={{ color: 'var(--danger)' }}>
+                      Public IP exposed via WebRTC
+                      {data.ipInfo && data.webrtc.publicIPs.some(ip => ip !== data.ipInfo!.ip) &&
+                        ' — and it differs from your HTTP IP (possible VPN bypass)'}
+                    </div>
                     <div className="list-items">
-                      {data.webrtc.localIPs.map((ip, i) => (
+                      {data.webrtc.publicIPs.map((ip, i) => (
                         <span key={i} className="list-item">{ip}</span>
                       ))}
                     </div>
                   </>
                 ) : (
-                  <div className="card-value" style={{ color: 'var(--success)' }}>No leaks detected</div>
+                  <div className="card-value" style={{ color: 'var(--success)' }}>No public IP exposed</div>
+                )}
+                {!loading && data && (data.webrtc.localIPs.length > 0 || data.webrtc.mdnsCandidates.length > 0) && (
+                  <>
+                    <p style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', margin: '0.5rem 0 0.25rem' }}>
+                      Local candidates visible to scripts (not an internet-facing leak):
+                    </p>
+                    <div className="list-items">
+                      {[...data.webrtc.localIPs, ...data.webrtc.mdnsCandidates].map((ip, i) => (
+                        <span key={i} className="list-item">{ip}</span>
+                      ))}
+                    </div>
+                  </>
                 )}
               </div>
               <p className="card-explanation">
-                WebRTC can expose your real IP address even when using a VPN. This is a serious privacy concern for VPN users.
+                WebRTC can expose your real public IP even when using a VPN — the key check is whether the WebRTC IP differs from your HTTP IP. Modern browsers hide local IPs behind mDNS names by default.
               </p>
             </div>
 
@@ -629,7 +652,7 @@ function App() {
                       <circle cx="16" cy="14" r="1"/>
                     </svg>
                   </div>
-                  <h3>Cookie Status<CardInfo text="navigator.cookieEnabled; we try to set a test cookie with SameSite=None; Secure and check if it's present." /></h3>
+                  <h3>Cookie Status<CardInfo text="navigator.cookieEnabled, plus a first-party test cookie we set and immediately delete. Third-party cookie behavior cannot be tested from a single first-party page — it would require an embedded cross-site iframe — so we don't pretend to measure it." /></h3>
                 </div>
               </div>
               <div className="card-content">
@@ -642,6 +665,10 @@ function App() {
                       <span className="card-detail-value" style={{ color: data?.cookies.enabled ? 'var(--success)' : 'var(--danger)' }}>
                         {data?.cookies.enabled ? 'Enabled' : 'Disabled'}
                       </span>
+                    </div>
+                    <div className="card-detail">
+                      <span className="card-detail-label">First-party write</span>
+                      <span className="card-detail-value">{data?.cookies.firstPartyWrite}</span>
                     </div>
                     <div className="card-detail">
                       <span className="card-detail-label">Third-Party</span>
@@ -664,7 +691,7 @@ function App() {
                       <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
                     </svg>
                   </div>
-                  <h3>Connection Speed<CardInfo text="We request a small resource from each server 3 times and take the median round-trip time (latency) in milliseconds." /></h3>
+                  <h3>Server Response Time<CardInfo text="After a warm-up request (so DNS/TLS setup isn't counted), we fetch a small resource from each server 3 times and take the median HTTP round-trip time. This includes server processing time, so it's higher than a raw ping." /></h3>
                 </div>
                 {!loading && data?.speedTests && data.speedTests.length > 0 && data.speedTests.every(t => t.status === 'done' || t.status === 'error') && (
                   <span className="card-status status-safe">Complete</span>
@@ -701,7 +728,7 @@ function App() {
                 )}
               </div>
               <p className="card-explanation">
-                Latency to major servers shows your connection quality. Websites can use timing data to estimate your location and network conditions.
+                HTTP round-trip time to major servers indicates connection quality (it is not a raw ping). Websites can use timing like this to estimate your network conditions and rough location.
               </p>
             </div>
 
@@ -821,11 +848,11 @@ function App() {
                       <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
                     </svg>
                   </div>
-                  <h3>Do Not Track<CardInfo text="navigator.doNotTrack (or msDoNotTrack) — your browser's Do Not Track setting. Most sites ignore it." /></h3>
+                  <h3>Tracking Signals (DNT / GPC)<CardInfo text="navigator.doNotTrack and navigator.globalPrivacyControl. DNT is obsolete (Firefox removed it in 2025; sites ignore it). GPC is its successor and is legally enforceable under some laws like the California CCPA." /></h3>
                 </div>
                 {!loading && (
-                  <span className={`card-status ${data?.doNotTrack === 'Yes' ? 'status-safe' : 'status-warning'}`}>
-                    {data?.doNotTrack}
+                  <span className={`card-status ${data?.gpc === 'Enabled' ? 'status-safe' : 'status-warning'}`}>
+                    GPC {data?.gpc}
                   </span>
                 )}
               </div>
@@ -833,11 +860,20 @@ function App() {
                 {loading ? (
                   <div className="loading"><div className="spinner"></div> Loading...</div>
                 ) : (
-                  <div className="card-value">{data?.doNotTrack}</div>
+                  <div className="card-details">
+                    <div className="card-detail">
+                      <span className="card-detail-label">Do Not Track</span>
+                      <span className="card-detail-value">{data?.doNotTrack}</span>
+                    </div>
+                    <div className="card-detail">
+                      <span className="card-detail-label">Global Privacy Control</span>
+                      <span className="card-detail-value">{data?.gpc}</span>
+                    </div>
+                  </div>
                 )}
               </div>
               <p className="card-explanation">
-                Do Not Track is a browser setting asking sites not to track you. Most sites ignore it; it is not legally enforced.
+                Do Not Track is effectively dead — sites ignore it and Firefox removed it. Global Privacy Control (GPC) is the modern signal, and businesses must honor it under some US state privacy laws.
               </p>
             </div>
 
@@ -890,7 +926,7 @@ function App() {
       <footer className="footer">
         <div className="container">
           <p style={{ marginBottom: '0.5rem' }}>
-            <strong>Privacy Notice:</strong> We don't store or send your data anywhere. Everything runs in your browser.
+            <strong>Privacy Notice:</strong> This site stores and logs nothing. Most checks run entirely in your browser; the IP lookup, WebRTC test, and latency tests necessarily contact third-party servers (which see your IP, as any website does).
           </p>
           <p>
             Built with privacy in mind. <a href="https://github.com/andy-broyles/whatdotheyknow-app" target="_blank" rel="noopener noreferrer">View source on GitHub</a>

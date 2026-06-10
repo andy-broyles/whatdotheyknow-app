@@ -14,7 +14,10 @@ export interface IPInfo {
 
 export interface WebRTCInfo {
   localIPs: string[];
-  publicIP: string | null;
+  publicIPs: string[];
+  mdnsCandidates: string[];
+  // True only when a PUBLIC IP is exposed via WebRTC. Local/mDNS candidates
+  // are visible to scripts but are not an IP leak by themselves.
   leaking: boolean;
 }
 
@@ -122,21 +125,24 @@ export function getCanvasFingerprint(): string {
 
     // Get data URL and hash it
     const dataUrl = canvas.toDataURL();
-    return hashString(dataUrl).substring(0, 16);
+    return hashString(dataUrl);
   } catch {
     return 'Not available';
   }
 }
 
-// Simple hash function
+// FNV-1a in two passes (forward + reverse) for a 16-hex-char digest.
+// Not cryptographic — just a stable, readable identifier.
 function hashString(str: string): string {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    const char = str.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash;
-  }
-  return Math.abs(hash).toString(16);
+  const fnv = (s: string): string => {
+    let hash = 0x811c9dc5;
+    for (let i = 0; i < s.length; i++) {
+      hash ^= s.charCodeAt(i);
+      hash = Math.imul(hash, 0x01000193);
+    }
+    return (hash >>> 0).toString(16).padStart(8, '0');
+  };
+  return fnv(str) + fnv(str.split('').reverse().join(''));
 }
 
 // Get WebGL info
@@ -169,11 +175,35 @@ export function getWebGLInfo(): WebGLInfo {
   }
 }
 
+// RFC 1918 / link-local / loopback IPv4 and private/link-local/loopback IPv6
+function isPrivateIP(ip: string): boolean {
+  if (ip.includes(':')) {
+    const v6 = ip.toLowerCase();
+    return (
+      v6 === '::1' ||
+      v6.startsWith('fe80:') || // link-local
+      v6.startsWith('fc') || v6.startsWith('fd') // unique local fc00::/7
+    );
+  }
+  const parts = ip.split('.').map(Number);
+  if (parts.length !== 4) return false;
+  const [a, b] = parts;
+  return (
+    a === 10 ||
+    a === 127 ||
+    (a === 172 && b >= 16 && b <= 31) ||
+    (a === 192 && b === 168) ||
+    (a === 169 && b === 254) ||
+    a === 0
+  );
+}
+
 // Detect WebRTC leaks
 export async function getWebRTCInfo(): Promise<WebRTCInfo> {
   const result: WebRTCInfo = {
     localIPs: [],
-    publicIP: null,
+    publicIPs: [],
+    mdnsCandidates: [],
     leaking: false,
   };
 
@@ -186,42 +216,52 @@ export async function getWebRTCInfo(): Promise<WebRTCInfo> {
       iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
     });
 
-    const ips = new Set<string>();
+    const localIPs = new Set<string>();
+    const publicIPs = new Set<string>();
+    const mdns = new Set<string>();
 
     pc.createDataChannel('');
-    
+
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
 
     return new Promise((resolve) => {
-      const timeout = setTimeout(() => {
+      const finish = () => {
         pc.close();
-        result.localIPs = Array.from(ips);
-        result.leaking = ips.size > 0;
+        result.localIPs = Array.from(localIPs);
+        result.publicIPs = Array.from(publicIPs);
+        result.mdnsCandidates = Array.from(mdns);
+        // Only a public IP exposed through ICE is an actual IP leak.
+        result.leaking = publicIPs.size > 0;
         resolve(result);
-      }, 3000);
+      };
+
+      const timeout = setTimeout(finish, 3000);
 
       pc.onicecandidate = (event) => {
         if (!event.candidate) {
           clearTimeout(timeout);
-          pc.close();
-          result.localIPs = Array.from(ips);
-          result.leaking = ips.size > 0;
-          resolve(result);
+          finish();
           return;
         }
 
         const candidate = event.candidate.candidate;
-        const ipMatch = candidate.match(/(\d{1,3}\.){3}\d{1,3}/);
-        
+        // Modern browsers replace local IPs with mDNS hostnames (xxx.local)
+        const mdnsMatch = candidate.match(/[a-f0-9-]+\.local/i);
+        if (mdnsMatch) {
+          mdns.add(mdnsMatch[0]);
+          return;
+        }
+
+        const ipMatch = candidate.match(
+          /((\d{1,3}\.){3}\d{1,3})|(([0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4})/
+        );
         if (ipMatch) {
           const ip = ipMatch[0];
-          // Check if it's a local IP
-          if (ip.startsWith('192.168.') || ip.startsWith('10.') || ip.startsWith('172.')) {
-            ips.add(ip);
-          } else if (!ip.startsWith('0.')) {
-            result.publicIP = ip;
-            ips.add(ip);
+          if (isPrivateIP(ip)) {
+            localIPs.add(ip);
+          } else {
+            publicIPs.add(ip);
           }
         }
       };
@@ -309,28 +349,27 @@ export async function detectAdBlocker(): Promise<boolean> {
   }
 }
 
-// Check cookie status
-export function getCookieStatus(): { enabled: boolean; thirdParty: string } {
+// Check cookie status.
+// Note: third-party cookies genuinely cannot be tested from a single
+// first-party page — that requires an embedded cross-site iframe. We report
+// a first-party write test and are explicit about that limitation.
+export function getCookieStatus(): { enabled: boolean; firstPartyWrite: string; thirdParty: string } {
   const enabled = navigator.cookieEnabled;
-  
-  // Third-party cookie detection is tricky and often blocked
-  // We can only provide a basic indication
-  let thirdParty = 'Unknown';
-  
+  let firstPartyWrite = 'Unknown';
+
   try {
-    // Try to set a test cookie
-    document.cookie = 'testcookie=1; SameSite=None; Secure';
+    document.cookie = 'testcookie=1; SameSite=Lax; path=/';
     if (document.cookie.indexOf('testcookie') !== -1) {
-      document.cookie = 'testcookie=; expires=Thu, 01 Jan 1970 00:00:00 UTC;';
-      thirdParty = 'Likely Enabled';
+      document.cookie = 'testcookie=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/';
+      firstPartyWrite = 'Allowed';
     } else {
-      thirdParty = 'Likely Blocked';
+      firstPartyWrite = 'Blocked';
     }
   } catch {
-    thirdParty = 'Unable to test';
+    firstPartyWrite = 'Unable to test';
   }
 
-  return { enabled, thirdParty };
+  return { enabled, firstPartyWrite, thirdParty: 'Not testable from this page' };
 }
 
 // Get screen info
@@ -365,20 +404,22 @@ export function parseUserAgent(ua: string) {
   let browser = 'Unknown';
   let os = 'Unknown';
 
-  // Detect browser
-  if (ua.includes('Firefox/')) browser = 'Firefox';
-  else if (ua.includes('Edg/')) browser = 'Microsoft Edge';
-  else if (ua.includes('Chrome/')) browser = 'Chrome';
-  else if (ua.includes('Safari/') && !ua.includes('Chrome')) browser = 'Safari';
-  else if (ua.includes('Opera') || ua.includes('OPR/')) browser = 'Opera';
+  // Detect browser — order matters: Opera/Edge/Samsung UAs all contain "Chrome/"
+  if (ua.includes('Firefox/') && !ua.includes('Seamonkey')) browser = 'Firefox';
+  else if (ua.includes('Edg/') || ua.includes('EdgA/') || ua.includes('EdgiOS/')) browser = 'Microsoft Edge';
+  else if (ua.includes('OPR/') || ua.includes('Opera')) browser = 'Opera';
+  else if (ua.includes('SamsungBrowser/')) browser = 'Samsung Internet';
+  else if (ua.includes('Chrome/') || ua.includes('CriOS/')) browser = 'Chrome (or Chromium-based)';
+  else if (ua.includes('Safari/')) browser = 'Safari';
 
-  // Detect OS
-  if (ua.includes('Windows NT 10')) os = 'Windows 10/11';
+  // Detect OS — mobile checks first ("Android" UAs also contain "Linux")
+  if (ua.includes('Android')) os = 'Android';
+  else if (ua.includes('iPhone') || ua.includes('iPad') || ua.includes('iPod')) os = 'iOS';
+  else if (ua.includes('Windows NT 10')) os = 'Windows 10/11 (the UA cannot distinguish them)';
   else if (ua.includes('Windows')) os = 'Windows';
-  else if (ua.includes('Mac OS X')) os = 'macOS';
+  else if (ua.includes('Mac OS X')) os = navigator.maxTouchPoints > 1 ? 'iPadOS (reports as macOS)' : 'macOS';
+  else if (ua.includes('CrOS')) os = 'ChromeOS';
   else if (ua.includes('Linux')) os = 'Linux';
-  else if (ua.includes('Android')) os = 'Android';
-  else if (ua.includes('iOS') || ua.includes('iPhone') || ua.includes('iPad')) os = 'iOS';
 
   return { browser, os };
 }
@@ -418,12 +459,21 @@ export function getReferrer(): string {
   return r || '(none or blocked)';
 }
 
-// Do Not Track
+// Do Not Track (largely obsolete — Firefox removed it; most sites ignore it)
 export function getDoNotTrack(): string {
   const dnt = navigator.doNotTrack ?? (navigator as Navigator & { msDoNotTrack?: string }).msDoNotTrack;
   if (dnt === '1') return 'Yes';
   if (dnt === '0') return 'No';
   return 'Not set';
+}
+
+// Global Privacy Control — the successor signal to DNT, legally enforceable
+// under some laws (e.g. California CCPA/CPRA, Colorado CPA).
+export function getGlobalPrivacyControl(): string {
+  const gpc = (navigator as Navigator & { globalPrivacyControl?: boolean }).globalPrivacyControl;
+  if (gpc === true) return 'Enabled';
+  if (gpc === false) return 'Disabled';
+  return 'Not supported';
 }
 
 // Storage estimate (quota / usage for tracking storage)
@@ -490,7 +540,10 @@ export async function runSpeedTests(
     results[i].status = 'testing';
     onUpdate([...results]);
 
-    // Run 3 tests and take the median for more accuracy
+    // Warm-up request so DNS resolution and TLS handshake don't inflate
+    // the first measurement, then run 3 tests and take the median.
+    await testLatency(servers[i].url + '?warmup=' + Date.now());
+
     const latencies: number[] = [];
     for (let j = 0; j < 3; j++) {
       const latency = await testLatency(servers[i].url + '?t=' + Date.now());
