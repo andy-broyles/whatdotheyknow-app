@@ -246,7 +246,7 @@ function App() {
               <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
               <path d="M9 12l2 2 4-4"/>
             </svg>
-            Nothing is stored or logged — IP &amp; latency tests contact third-party servers (see each card's ⓘ)
+            We collect nothing — no backend, no analytics, no logs. What you see stays on your screen.
           </div>
         </div>
       </section>
@@ -926,7 +926,7 @@ function App() {
       <footer className="footer">
         <div className="container">
           <p style={{ marginBottom: '0.5rem' }}>
-            <strong>Privacy Notice:</strong> This site stores and logs nothing. Most checks run entirely in your browser; the IP lookup, WebRTC test, and latency tests necessarily contact third-party servers (which see your IP, as any website does).
+            <strong>Privacy Notice:</strong> This site has no backend and collects nothing — all results exist only on your screen. A few checks (IP lookup, WebRTC, response times) work by contacting third-party servers, which see your IP the way any website does; each card's ⓘ explains exactly how it works.
           </p>
           <p>
             Built with privacy in mind. <a href="https://github.com/andy-broyles/whatdotheyknow-app" target="_blank" rel="noopener noreferrer">View source on GitHub</a>
