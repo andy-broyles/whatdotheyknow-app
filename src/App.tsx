@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, type ReactNode } from 'react';
 import { Analytics } from '@vercel/analytics/react';
 import {
   getIPInfo,
@@ -20,11 +20,22 @@ import {
   getDoNotTrack,
   getGlobalPrivacyControl,
   getStorageEstimate,
+  getAudioFingerprint,
+  getMediaDeviceCounts,
+  getPermissionStates,
+  getClientHints,
+  getSystemPreferences,
+  getBatteryInfo,
+  checkFingerprintHistory,
+  clearFingerprintHistory,
   type IPInfo,
   type WebRTCInfo,
   type WebGLInfo,
   type ConnectionInfo,
   type SpeedTestResult,
+  type ClientHintsInfo,
+  type PermissionState_,
+  type FingerprintHistory,
 } from './utils/privacy';
 
 interface PrivacyData {
@@ -47,6 +58,13 @@ interface PrivacyData {
   doNotTrack: string;
   gpc: string;
   storageEstimate: { quota: number; usage: number; usagePercent: string } | null;
+  audioFingerprint: string;
+  mediaDevices: { audioinput: number; audiooutput: number; videoinput: number } | null;
+  permissions: PermissionState_[];
+  clientHints: ClientHintsInfo;
+  preferences: ReturnType<typeof getSystemPreferences>;
+  battery: { level: number; charging: boolean } | null;
+  fpHistory: FingerprintHistory;
 }
 
 function CardInfo({ text }: { text: string }) {
@@ -59,6 +77,37 @@ function CardInfo({ text }: { text: string }) {
       <span className="info-tooltip" role="tooltip">{text}</span>
     </button>
   );
+}
+
+function Tip({ children }: { children: ReactNode }) {
+  return <p className="card-tip"><strong>Reduce it:</strong> {children}</p>;
+}
+
+interface ExposureSignal {
+  label: string;
+  exposed: boolean;
+  detail: string;
+}
+
+// Honest heuristic, not entropy math: counts which tracking surfaces this
+// browser exposes. Real uniqueness measurement needs a population database
+// (like EFF's Cover Your Tracks); we say so in the UI.
+function computeExposure(data: PrivacyData): { signals: ExposureSignal[]; exposedCount: number; level: 'low' | 'medium' | 'high' } {
+  const signals: ExposureSignal[] = [
+    { label: 'IP & location visible', exposed: !!data.ipInfo, detail: data.ipInfo ? `${data.ipInfo.city}, ${data.ipInfo.country}` : 'Lookup blocked' },
+    { label: 'Stable browser fingerprint', exposed: data.fingerprint !== 'Unable to generate', detail: data.fpHistory.matches === true ? 'Matched your previous visit' : 'Generated this visit' },
+    { label: 'Canvas fingerprinting works', exposed: data.canvasFingerprint !== 'Not available', detail: 'Rendering hash readable' },
+    { label: 'Audio fingerprinting works', exposed: data.audioFingerprint !== 'Not available', detail: 'Audio stack hash readable' },
+    { label: 'GPU model exposed', exposed: data.webgl.available && !/swiftshader|llvmpipe|mesa/i.test(data.webgl.renderer), detail: data.webgl.available ? 'Unmasked WebGL renderer' : 'WebGL unavailable' },
+    { label: 'WebRTC exposes public IP', exposed: data.webrtc.leaking, detail: data.webrtc.leaking ? 'Public IP in ICE candidates' : 'No public candidate' },
+    { label: 'Fonts enumerable', exposed: data.fonts.length > 5, detail: `${data.fonts.length} fonts detected` },
+    { label: 'Hardware specs exposed', exposed: data.hardware.deviceMemory != null, detail: data.hardware.deviceMemory != null ? 'CPU cores + RAM readable' : 'RAM hidden (cores still visible)' },
+    { label: 'High-entropy client hints', exposed: data.clientHints.platformVersion != null, detail: data.clientHints.platformVersion != null ? 'Exact OS version readable' : 'Not available' },
+    { label: 'No opt-out signal sent', exposed: data.gpc !== 'Enabled', detail: data.gpc === 'Enabled' ? 'GPC active' : 'GPC off or unsupported' },
+  ];
+  const exposedCount = signals.filter(s => s.exposed).length;
+  const level = exposedCount <= 3 ? 'low' : exposedCount <= 6 ? 'medium' : 'high';
+  return { signals, exposedCount, level };
 }
 
 function App() {
@@ -78,12 +127,19 @@ function App() {
     const ua = getUserAgent();
     
     // Collect all data in parallel where possible
-    const [ipInfo, fingerprint, webrtc, adBlocker] = await Promise.all([
+    const [ipInfo, fingerprint, webrtc, adBlocker, audioFingerprint, mediaDevices, permissions, clientHints, battery] = await Promise.all([
       getIPInfo(),
       getBrowserFingerprint(),
       getWebRTCInfo(),
       detectAdBlocker(),
+      getAudioFingerprint(),
+      getMediaDeviceCounts(),
+      getPermissionStates(),
+      getClientHints(),
+      getBatteryInfo(),
     ]);
+
+    const fpHistory = checkFingerprintHistory(fingerprint);
 
     // Synchronous data
     const canvasFingerprint = getCanvasFingerprint();
@@ -98,6 +154,7 @@ function App() {
     const referrer = getReferrer();
     const doNotTrack = getDoNotTrack();
     const gpc = getGlobalPrivacyControl();
+    const preferences = getSystemPreferences();
     const storageEstimate = await getStorageEstimate();
 
     setData({
@@ -120,6 +177,13 @@ function App() {
       doNotTrack,
       gpc,
       storageEstimate,
+      audioFingerprint,
+      mediaDevices,
+      permissions,
+      clientHints,
+      preferences,
+      battery,
+      fpHistory,
     });
 
     setLoading(false);
@@ -145,22 +209,35 @@ function App() {
   const formatStorageBytes = (n: number) =>
     n < 1024 ? n + ' B' : n < 1024 * 1024 ? (n / 1024).toFixed(1) + ' KB' : (n / (1024 * 1024)).toFixed(1) + ' MB';
 
-  const handleCopyReport = async () => {
-    if (!data) return;
+  const buildReport = (redact: boolean) => {
+    if (!data) return '';
+    const maskIP = (ip: string) => {
+      if (!redact) return ip;
+      if (ip.includes(':')) return ip.split(':').slice(0, 2).join(':') + ':xxxx…';
+      return ip.split('.').slice(0, 2).join('.') + '.xxx.xxx';
+    };
     const lines: string[] = [
-      '— What Do They Know? — Privacy Report',
+      '— What Do They Know? — Privacy Report' + (redact ? ' (IPs redacted)' : ''),
       '',
-      'IP & Location: ' + (data.ipInfo ? `${data.ipInfo.ip} | ${data.ipInfo.city}, ${data.ipInfo.region}, ${data.ipInfo.country} | ${data.ipInfo.isp}` : 'Protected or blocked'),
+      'IP & Location: ' + (data.ipInfo ? `${maskIP(data.ipInfo.ip)} | ${data.ipInfo.city}, ${data.ipInfo.region}, ${data.ipInfo.country} | ${data.ipInfo.isp}` + (data.ipInfo.vpnOrProxy !== null ? ` | VPN/proxy per ${data.ipInfo.source}: ${data.ipInfo.vpnOrProxy ? 'Yes' : 'No'}` : '') : 'Protected or blocked'),
       'Browser Fingerprint: ' + data.fingerprint,
       'Canvas Fingerprint: ' + data.canvasFingerprint,
       'User Agent: ' + data.parsedUA.browser + ' / ' + data.parsedUA.os,
       'Screen: ' + data.screen.width + '×' + data.screen.height + ', ' + data.screen.colorDepth + '-bit, ' + data.screen.pixelRatio + 'x',
       'Timezone: ' + data.locale.timezone + ' | Language: ' + data.locale.language,
       'WebGL: ' + (data.webgl.available ? data.webgl.vendor + ' / ' + data.webgl.renderer : 'N/A'),
-      'WebRTC: ' + (data.webrtc.leaking ? 'Public IP exposed: ' + data.webrtc.publicIPs.join(', ') : 'No public IP exposed') +
+      'WebRTC: ' + (data.webrtc.leaking ? 'Public IP exposed: ' + data.webrtc.publicIPs.map(maskIP).join(', ') : 'No public IP exposed') +
         (data.webrtc.localIPs.length || data.webrtc.mdnsCandidates.length
-          ? ' | Local candidates: ' + [...data.webrtc.localIPs, ...data.webrtc.mdnsCandidates].join(', ')
+          ? ' | Local candidates: ' + [...data.webrtc.localIPs.map(maskIP), ...data.webrtc.mdnsCandidates].join(', ')
           : ''),
+      'Audio Fingerprint: ' + data.audioFingerprint,
+      'Media devices: ' + (data.mediaDevices ? `${data.mediaDevices.videoinput} camera(s), ${data.mediaDevices.audioinput} mic(s), ${data.mediaDevices.audiooutput} speaker(s)` : 'N/A'),
+      'Permissions: ' + (data.permissions.length ? data.permissions.map(p => `${p.name}=${p.state}`).join(', ') : 'N/A'),
+      'Client hints: ' + (data.clientHints.supported ? [data.clientHints.brands.join(' / '), data.clientHints.platform, data.clientHints.platformVersion, data.clientHints.architecture].filter(Boolean).join(' | ') : 'Not supported'),
+      'Preferences: ' + `${data.preferences.colorScheme} mode, reduced motion ${data.preferences.reducedMotion ? 'on' : 'off'}, touch ${data.preferences.touchSupport ? 'yes (' + data.preferences.maxTouchPoints + ' points)' : 'no'}, ${data.preferences.pointerType}`,
+      'Battery: ' + (data.battery ? `${data.battery.level}%${data.battery.charging ? ' (charging)' : ''}` : 'Not exposed'),
+      'Languages: ' + data.locale.languages.join(', '),
+      'Fingerprint vs last visit: ' + (data.fpHistory.matches === null ? 'First recorded visit' : data.fpHistory.matches ? 'SAME — recognizable without cookies' : 'Different'),
       'Fonts detected: ' + data.fonts.length,
       'Ad blocker: ' + (data.adBlocker ? 'Yes' : 'No'),
       'Cookies: ' + (data.cookies.enabled ? 'Enabled' : 'Disabled') + ' | First-party write: ' + data.cookies.firstPartyWrite + ' | Third-party: ' + data.cookies.thirdParty,
@@ -175,14 +252,37 @@ function App() {
       data.speedTests.forEach(t => lines.push(`  ${t.server} (${t.location}): ${t.latency != null ? t.latency + ' ms' : 'Failed'}`));
     }
     lines.push('', 'Generated at whatdotheyknow.app — nothing stored or logged by this site.');
+    return lines.join('\n');
+  };
+
+  const handleCopyReport = async (redact: boolean) => {
+    const report = buildReport(redact);
+    if (!report) return;
     try {
-      await navigator.clipboard.writeText(lines.join('\n'));
+      await navigator.clipboard.writeText(report);
       setCopyStatus('copied');
       setTimeout(() => setCopyStatus('idle'), 2000);
     } catch {
       setCopyStatus('error');
       setTimeout(() => setCopyStatus('idle'), 2000);
     }
+  };
+
+  const handleDownloadReport = () => {
+    const report = buildReport(false);
+    if (!report) return;
+    const blob = new Blob([report], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'whatdotheyknow-report.txt';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleClearHistory = () => {
+    clearFingerprintHistory();
+    setData(prev => prev ? { ...prev, fpHistory: { previousId: null, previousDate: null, matches: null } } : null);
   };
 
   return (
@@ -206,12 +306,21 @@ function App() {
             What Do They Know?
           </a>
           <div className="header-actions">
-            <button className="btn btn-secondary" onClick={handleCopyReport} disabled={loading || !data} title="Copy full report to clipboard">
+            <button className="btn btn-secondary" onClick={() => handleCopyReport(false)} disabled={loading || !data} title="Copy full report to clipboard">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
                 <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
               </svg>
               {copyStatus === 'copied' ? 'Copied!' : copyStatus === 'error' ? 'Failed' : 'Copy report'}
+            </button>
+            <button className="btn btn-secondary" onClick={() => handleCopyReport(true)} disabled={loading || !data} title="Copy report with IP addresses masked — safe to share">
+              Copy redacted
+            </button>
+            <button className="btn btn-secondary" onClick={handleDownloadReport} disabled={loading || !data} title="Download full report as a .txt file">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
+              </svg>
+              Download
             </button>
             <button className="btn btn-primary" onClick={handleRefresh} disabled={loading}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -254,6 +363,37 @@ function App() {
       {/* Main Content */}
       <main className="main">
         <div className="container">
+          {!loading && data && (() => {
+            const exp = computeExposure(data);
+            const levelColor = exp.level === 'low' ? 'var(--success)' : exp.level === 'medium' ? 'var(--warning)' : 'var(--danger)';
+            const levelLabel = exp.level === 'low' ? 'Low exposure' : exp.level === 'medium' ? 'Medium exposure' : 'High exposure';
+            return (
+              <section className="summary-panel" aria-label="Exposure summary">
+                <div className="summary-headline">
+                  <div>
+                    <h2>Your tracking exposure: <span style={{ color: levelColor }}>{levelLabel}</span></h2>
+                    <p className="summary-sub">
+                      {exp.exposedCount} of {exp.signals.length} tracking surfaces are exposed in this browser.
+                      This is a count of working techniques, not a uniqueness measurement — true uniqueness
+                      needs a population database like <a href="https://coveryourtracks.eff.org/" target="_blank" rel="noopener noreferrer">EFF's Cover Your Tracks</a>.
+                    </p>
+                  </div>
+                  <div className="summary-score" style={{ borderColor: levelColor, color: levelColor }}>
+                    {exp.exposedCount}/{exp.signals.length}
+                  </div>
+                </div>
+                <ul className="summary-signals">
+                  {exp.signals.map((s, i) => (
+                    <li key={i} className={s.exposed ? 'signal-exposed' : 'signal-safe'}>
+                      <span className="signal-dot" aria-hidden="true">{s.exposed ? '●' : '○'}</span>
+                      <span className="signal-label">{s.label}</span>
+                      <span className="signal-detail">{s.detail}</span>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            );
+          })()}
           <h2 className="section-heading">What websites can see about you</h2>
           <div className="cards-grid">
             {/* IP Address Card */}
@@ -292,6 +432,12 @@ function App() {
                         <span className="card-detail-label">ISP</span>
                         <span className="card-detail-value">{data.ipInfo.isp}</span>
                       </div>
+                      <div className="card-detail">
+                        <span className="card-detail-label">VPN/proxy visible</span>
+                        <span className="card-detail-value" style={{ color: data.ipInfo.vpnOrProxy === true ? 'var(--warning)' : undefined }}>
+                          {data.ipInfo.vpnOrProxy === true ? `Yes (per ${data.ipInfo.source})` : data.ipInfo.vpnOrProxy === false ? `No (per ${data.ipInfo.source})` : `Not reported by ${data.ipInfo.source}`}
+                        </span>
+                      </div>
                     </div>
                   </>
                 ) : (
@@ -306,8 +452,9 @@ function App() {
                 )}
               </div>
               <p className="card-explanation">
-                Your IP address reveals your approximate location and internet provider. Websites use this to serve localized content and track your general whereabouts.
+                Your IP address reveals your approximate location and internet provider. Websites use this to serve localized content and track your general whereabouts. If you use a VPN, sites can often still tell — VPN and datacenter IP ranges are publicly catalogued.
               </p>
+              <Tip>A reputable VPN or Tor changes the IP sites see. Note the "VPN/proxy visible" row — sites can usually tell you're on a VPN even though they can't see through it.</Tip>
             </div>
 
             {/* Browser Fingerprint Card */}
@@ -319,7 +466,7 @@ function App() {
                       <path d="M12 11c0 3.517-1.009 6.799-2.753 9.571m-3.44-2.04l.054-.09A13.916 13.916 0 008 11a4 4 0 118 0c0 1.017-.07 2.019-.203 3m-2.118 6.844A21.88 21.88 0 0015.171 17m3.839 1.132c.645-2.266.99-4.659.99-7.132A8 8 0 008 4.07M3 15.364c.64-1.319 1-2.8 1-4.364 0-1.457.39-2.823 1.07-4"/>
                     </svg>
                   </div>
-                  <h3>Browser Fingerprint<CardInfo text="FingerprintJS runs in your browser and combines many signals (canvas, WebGL, fonts, etc.) into a single hash. No data is sent to a server." /></h3>
+                  <h3>Browser Fingerprint<CardInfo text="FingerprintJS runs in your browser and combines many signals (canvas, WebGL, fonts, etc.) into a single hash. No data is sent to a server. To demonstrate persistence, we keep your last fingerprint in your own localStorage — clearable anytime." /></h3>
                 </div>
                 <span className="card-status status-warning">Unique ID</span>
               </div>
@@ -327,12 +474,36 @@ function App() {
                 {loading ? (
                   <div className="loading"><div className="spinner"></div> Generating...</div>
                 ) : (
-                  <div className="card-value mono">{data?.fingerprint}</div>
+                  <>
+                    <div className="card-value mono">{data?.fingerprint}</div>
+                    {data?.fpHistory.matches === true && (
+                      <p style={{ fontSize: '0.8125rem', color: 'var(--danger)', marginTop: '0.5rem' }}>
+                        Same fingerprint as your visit on {new Date(data.fpHistory.previousDate!).toLocaleString()} — this is how
+                        sites recognize you with no cookies at all.{' '}
+                        <button onClick={handleClearHistory} style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', textDecoration: 'underline', padding: 0, font: 'inherit', fontSize: 'inherit' }}>
+                          Clear stored history
+                        </button>
+                      </p>
+                    )}
+                    {data?.fpHistory.matches === null && (
+                      <p style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>
+                        First recorded visit. We saved this fingerprint in your browser's localStorage (the only thing this app
+                        stores, and it never leaves your machine) — revisit later to see if it still identifies you.
+                      </p>
+                    )}
+                    {data?.fpHistory.matches === false && (
+                      <p style={{ fontSize: '0.8125rem', color: 'var(--success)', marginTop: '0.5rem' }}>
+                        Different from your visit on {new Date(data.fpHistory.previousDate!).toLocaleString()} — something about
+                        your browser changed, which makes you harder to track.
+                      </p>
+                    )}
+                  </>
                 )}
               </div>
               <p className="card-explanation">
                 This unique identifier is generated from your browser's characteristics. It can track you across websites even without cookies.
               </p>
+              <Tip>Firefox's <code>privacy.resistFingerprinting</code>, the Tor Browser, or Brave's fingerprint randomization make this ID unstable between sessions, which defeats it.</Tip>
             </div>
 
             {/* User Agent Card */}
@@ -370,6 +541,7 @@ function App() {
               <p className="card-explanation">
                 Your user agent string tells websites your browser type, version, and operating system. This helps serve compatible content but also enables tracking.
               </p>
+              <Tip>You can't usefully hide this — spoofing the UA breaks sites and makes you <em>more</em> unusual. Using a mainstream browser keeps you in a bigger crowd.</Tip>
             </div>
 
             {/* Screen Resolution Card */}
@@ -412,6 +584,7 @@ function App() {
               <p className="card-explanation">
                 Screen resolution and color depth are used for responsive design but also contribute to your unique browser fingerprint.
               </p>
+              <Tip>Common resolutions (1920×1080) blend in; unusual monitors and fractional zoom levels stand out. Tor Browser letterboxes the window to standard sizes for exactly this reason.</Tip>
             </div>
 
             {/* Timezone & Language Card */}
@@ -441,6 +614,10 @@ function App() {
                       <span className="card-detail-value">{data?.locale.language}</span>
                     </div>
                     <div className="card-detail">
+                      <span className="card-detail-label">All languages</span>
+                      <span className="card-detail-value">{data?.locale.languages.join(', ')}</span>
+                    </div>
+                    <div className="card-detail">
                       <span className="card-detail-label">Platform</span>
                       <span className="card-detail-value">{data?.locale.platform}</span>
                     </div>
@@ -448,8 +625,9 @@ function App() {
                 )}
               </div>
               <p className="card-explanation">
-                Your timezone and language settings reveal your location and preferences, helping websites personalize content and narrow down your identity.
+                Your timezone and language settings reveal your location and preferences. The full language <em>list</em> is a stronger fingerprint signal than the primary language alone — an unusual combination is very identifying.
               </p>
+              <Tip>If your IP says one country and your timezone says another, sites notice the mismatch — VPN users should be aware of this. Tor Browser reports UTC for everyone.</Tip>
             </div>
 
             {/* Canvas Fingerprint Card */}
@@ -477,6 +655,7 @@ function App() {
               <p className="card-explanation">
                 Canvas fingerprinting draws invisible graphics and reads the result. Subtle differences in rendering create a unique identifier for your system.
               </p>
+              <Tip>Brave randomizes canvas output per-site ("farbling"); Firefox's resistFingerprinting and extensions like CanvasBlocker add noise so the hash changes every time.</Tip>
             </div>
 
             {/* WebGL Card */}
@@ -514,6 +693,7 @@ function App() {
               <p className="card-explanation">
                 WebGL reveals your graphics card model and driver, which is highly unique and used for fingerprinting.
               </p>
+              <Tip>Firefox's resistFingerprinting and Tor Browser report a generic renderer instead of your real GPU. Brave randomizes WebGL the same way it does canvas.</Tip>
             </div>
 
             {/* WebRTC Card */}
@@ -570,6 +750,7 @@ function App() {
               <p className="card-explanation">
                 WebRTC can expose your real public IP even when using a VPN — the key check is whether the WebRTC IP differs from your HTTP IP. Modern browsers hide local IPs behind mDNS names by default.
               </p>
+              <Tip>Good VPN apps route WebRTC traffic too — verify with this card while connected. uBlock Origin has a "prevent WebRTC IP leak" setting; Firefox lets you disable WebRTC entirely via <code>media.peerconnection.enabled</code>.</Tip>
             </div>
 
             {/* Fonts Card */}
@@ -602,8 +783,9 @@ function App() {
                 )}
               </div>
               <p className="card-explanation">
-                Your installed fonts create a unique signature. The combination of fonts you have is surprisingly identifiable.
+                Your installed fonts create a unique signature. The combination of fonts you have is surprisingly identifiable — especially fonts installed by specific software (Adobe, Microsoft Office, design tools).
               </p>
+              <Tip>Avoid installing system-wide fonts you don't need. Firefox's resistFingerprinting restricts sites to a standard font whitelist.</Tip>
             </div>
 
             {/* Ad Blocker Card */}
@@ -637,6 +819,7 @@ function App() {
               <p className="card-explanation">
                 Websites can detect if you're using an ad blocker. While this protects your privacy, it's also used to fingerprint you.
               </p>
+              <Tip>Keep the blocker — blocking trackers helps far more than the one detection bit costs. uBlock Origin is the standard recommendation.</Tip>
             </div>
 
             {/* Cookies Card */}
@@ -680,6 +863,7 @@ function App() {
               <p className="card-explanation">
                 Cookies are the primary way websites track you. Third-party cookies enable cross-site tracking by advertisers.
               </p>
+              <Tip>Block third-party cookies in your browser settings (Firefox and Safari do by default; Chrome still allows them). Everything keeps working for the vast majority of sites.</Tip>
             </div>
 
             {/* Speed Test Card */}
@@ -730,6 +914,7 @@ function App() {
               <p className="card-explanation">
                 HTTP round-trip time to major servers indicates connection quality (it is not a raw ping). Websites can use timing like this to estimate your network conditions and rough location.
               </p>
+              <Tip>Little to do here — timing is inherent to networking. A VPN changes which region you appear closest to (and adds some latency).</Tip>
             </div>
 
             {/* Connection / Network Card */}
@@ -773,6 +958,7 @@ function App() {
               <p className="card-explanation">
                 The Network Information API reveals your connection type (4g, wifi, etc.) and quality. Used for fingerprinting and serving different content by connection.
               </p>
+              <Tip>Chromium-only — Firefox and Safari don't ship this API at all, which is the privacy-protective choice.</Tip>
             </div>
 
             {/* Hardware Card */}
@@ -806,12 +992,17 @@ function App() {
                       <span className="card-detail-label">Device memory</span>
                       <span className="card-detail-value">{data?.hardware.deviceMemory != null ? '~' + data.hardware.deviceMemory + ' GB' : 'Not reported'}</span>
                     </div>
+                    <div className="card-detail">
+                      <span className="card-detail-label">Battery</span>
+                      <span className="card-detail-value">{data?.battery ? `${data.battery.level}%${data.battery.charging ? ' (charging)' : ''}` : 'Not exposed'}</span>
+                    </div>
                   </div>
                 )}
               </div>
               <p className="card-explanation">
                 CPU core count and approximate RAM are exposed to scripts. Together with other signals they help build a unique device fingerprint.
               </p>
+              <Tip>Firefox's resistFingerprinting caps the reported core count; deviceMemory is Chromium-only. Common hardware (4–8 cores) blends in better than exotic specs.</Tip>
             </div>
 
             {/* Referrer Card */}
@@ -837,6 +1028,7 @@ function App() {
               <p className="card-explanation">
                 The referrer header tells this page which site or URL sent you here. It can leak your browsing path; many privacy tools strip it.
               </p>
+              <Tip>Modern browsers default to sending only the origin (not the full URL) cross-site. Extensions like uBlock Origin can strip it entirely.</Tip>
             </div>
 
             {/* Do Not Track Card */}
@@ -875,6 +1067,7 @@ function App() {
               <p className="card-explanation">
                 Do Not Track is effectively dead — sites ignore it and Firefox removed it. Global Privacy Control (GPC) is the modern signal, and businesses must honor it under some US state privacy laws.
               </p>
+              <Tip>Enable GPC: built into Firefox (Settings → Privacy) and Brave; available for Chrome via extensions like Privacy Badger.</Tip>
             </div>
 
             {/* Storage Estimate Card */}
@@ -916,9 +1109,213 @@ function App() {
               <p className="card-explanation">
                 Browsers expose how much storage (cookies, localStorage, etc.) is available and used. Sites use this to decide how much tracking data to store.
               </p>
+              <Tip>Periodically clear site data for sites you don't trust, or use containers/private windows so storage doesn't accumulate across sessions.</Tip>
+            </div>
+
+            {/* Audio Fingerprint Card */}
+            <div className="card">
+              <div className="card-header">
+                <div className="card-title">
+                  <div className="card-icon purple">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M3 18v-6a9 9 0 0 1 18 0v6"/>
+                      <path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/>
+                    </svg>
+                  </div>
+                  <h3>Audio Fingerprint<CardInfo text="We render a fixed tone through an OfflineAudioContext (nothing plays out loud, no microphone involved) and sum the output samples. Tiny float-math differences across hardware/drivers make the number identifying." /></h3>
+                </div>
+                <span className="card-status status-warning">Trackable</span>
+              </div>
+              <div className="card-content">
+                {loading ? (
+                  <div className="loading"><div className="spinner"></div> Rendering...</div>
+                ) : (
+                  <div className="card-value mono">{data?.audioFingerprint}</div>
+                )}
+              </div>
+              <p className="card-explanation">
+                Like canvas fingerprinting but for your audio stack: the same silent signal renders slightly differently on different machines, producing a stable identifier. No sound plays and no microphone is used.
+              </p>
+              <Tip>Brave randomizes audio output per-site; Tor Browser blocks the technique. Most other browsers expose it freely.</Tip>
+            </div>
+
+            {/* Media Devices & Permissions Card */}
+            <div className="card">
+              <div className="card-header">
+                <div className="card-title">
+                  <div className="card-icon red">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M23 7l-7 5 7 5V7z"/>
+                      <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
+                    </svg>
+                  </div>
+                  <h3>Devices & Permissions<CardInfo text="navigator.mediaDevices.enumerateDevices() — device COUNTS are readable without any permission prompt (names stay hidden until you grant access). navigator.permissions.query() shows what you've already granted." /></h3>
+                </div>
+              </div>
+              <div className="card-content">
+                {loading ? (
+                  <div className="loading"><div className="spinner"></div> Enumerating...</div>
+                ) : (
+                  <div className="card-details">
+                    {data?.mediaDevices ? (
+                      <>
+                        <div className="card-detail">
+                          <span className="card-detail-label">Cameras</span>
+                          <span className="card-detail-value">{data.mediaDevices.videoinput}</span>
+                        </div>
+                        <div className="card-detail">
+                          <span className="card-detail-label">Microphones</span>
+                          <span className="card-detail-value">{data.mediaDevices.audioinput}</span>
+                        </div>
+                        <div className="card-detail">
+                          <span className="card-detail-label">Speakers</span>
+                          <span className="card-detail-value">{data.mediaDevices.audiooutput}</span>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="card-detail">
+                        <span className="card-detail-label">Media devices</span>
+                        <span className="card-detail-value">Not available</span>
+                      </div>
+                    )}
+                    {data?.permissions.map((p) => (
+                      <div className="card-detail" key={p.name}>
+                        <span className="card-detail-label" style={{ textTransform: 'capitalize' }}>{p.name.replace('-', ' ')}</span>
+                        <span className="card-detail-value" style={{ color: p.state === 'granted' ? 'var(--warning)' : p.state === 'denied' ? 'var(--success)' : undefined }}>
+                          {p.state}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <p className="card-explanation">
+                Any site can count your cameras, mics, and speakers without asking — and check which permissions you've already granted. "Granted" permissions can be silently re-used on a return visit.
+              </p>
+              <Tip>Audit granted permissions in your browser's site settings and revoke ones you no longer need — "granted" means no prompt next time.</Tip>
+            </div>
+
+            {/* System Preferences Card */}
+            <div className="card">
+              <div className="card-header">
+                <div className="card-title">
+                  <div className="card-icon yellow">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <circle cx="12" cy="12" r="3"/>
+                      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                    </svg>
+                  </div>
+                  <h3>System Preferences<CardInfo text="Read via CSS media queries (matchMedia) and navigator.maxTouchPoints: dark/light mode, reduced motion, contrast, touch support, pointer type. Each is one more fingerprint bit." /></h3>
+                </div>
+              </div>
+              <div className="card-content">
+                {loading ? (
+                  <div className="loading"><div className="spinner"></div> Loading...</div>
+                ) : (
+                  <div className="card-details">
+                    <div className="card-detail">
+                      <span className="card-detail-label">Color scheme</span>
+                      <span className="card-detail-value">{data?.preferences.colorScheme}</span>
+                    </div>
+                    <div className="card-detail">
+                      <span className="card-detail-label">Reduced motion</span>
+                      <span className="card-detail-value">{data?.preferences.reducedMotion ? 'On' : 'Off'}</span>
+                    </div>
+                    <div className="card-detail">
+                      <span className="card-detail-label">High contrast</span>
+                      <span className="card-detail-value">{data?.preferences.highContrast ? 'On' : 'Off'}</span>
+                    </div>
+                    <div className="card-detail">
+                      <span className="card-detail-label">Touch</span>
+                      <span className="card-detail-value">{data?.preferences.touchSupport ? `Yes (${data.preferences.maxTouchPoints} points)` : 'No'}</span>
+                    </div>
+                    <div className="card-detail">
+                      <span className="card-detail-label">Pointer</span>
+                      <span className="card-detail-value">{data?.preferences.pointerType}</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+              <p className="card-explanation">
+                Yes — even your dark-mode choice is visible to every website via CSS. Accessibility settings like reduced motion are especially identifying because few people enable them.
+              </p>
+              <Tip>These leak through CSS itself, so they're hard to hide without breaking theming. Tor Browser reports the defaults for everyone.</Tip>
+            </div>
+
+            {/* Client Hints Card */}
+            <div className="card">
+              <div className="card-header">
+                <div className="card-title">
+                  <div className="card-icon blue">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>
+                    </svg>
+                  </div>
+                  <h3>Client Hints<CardInfo text="navigator.userAgentData (Chromium). Low-entropy values are free; 'high-entropy' values — exact OS version, CPU architecture, device model — are handed to any script that calls getHighEntropyValues(). No permission prompt." /></h3>
+                </div>
+                {!loading && data?.clientHints.supported && data.clientHints.platformVersion != null && (
+                  <span className="card-status status-warning">High entropy</span>
+                )}
+              </div>
+              <div className="card-content">
+                {loading ? (
+                  <div className="loading"><div className="spinner"></div> Loading...</div>
+                ) : data?.clientHints.supported ? (
+                  <div className="card-details">
+                    <div className="card-detail">
+                      <span className="card-detail-label">Browser</span>
+                      <span className="card-detail-value">{data.clientHints.brands.join(', ') || '—'}</span>
+                    </div>
+                    <div className="card-detail">
+                      <span className="card-detail-label">Platform</span>
+                      <span className="card-detail-value">{data.clientHints.platform ?? '—'}{data.clientHints.platformVersion ? ` ${data.clientHints.platformVersion}` : ''}</span>
+                    </div>
+                    <div className="card-detail">
+                      <span className="card-detail-label">Architecture</span>
+                      <span className="card-detail-value">{data.clientHints.architecture ?? '—'}</span>
+                    </div>
+                    <div className="card-detail">
+                      <span className="card-detail-label">Device model</span>
+                      <span className="card-detail-value">{data.clientHints.model || '(none — desktop)'}</span>
+                    </div>
+                    <div className="card-detail">
+                      <span className="card-detail-label">Full version</span>
+                      <span className="card-detail-value">{data.clientHints.fullVersion ?? '—'}</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="card-value">Not supported (Chromium-only API)</div>
+                )}
+              </div>
+              <p className="card-explanation">
+                Client Hints were designed to replace the user-agent string with something less identifying — but the "high-entropy" values give Chromium sites your exact OS build and CPU architecture, which is more precise than the UA string ever was.
+              </p>
+              <Tip>Firefox and Safari don't implement this API. On Chromium there's no setting to refuse high-entropy hints to scripts.</Tip>
             </div>
           </div>
 
+          {/* Explainer */}
+          <section className="explainer" aria-labelledby="explainer-heading">
+            <h2 id="explainer-heading">How browser fingerprinting works</h2>
+            <p>
+              Cookies can be deleted, so trackers built something sturdier: instead of <em>storing</em> an ID on your machine,
+              they <em>compute</em> one from how your machine behaves. Your screen size, fonts, GPU, audio stack, language list,
+              timezone, and dozens of other readable properties each narrow you down a little. Multiplied together, they often
+              identify one browser in millions — no storage required, nothing to clear.
+            </p>
+            <p>
+              That's why "clear cookies" doesn't stop tracking, and why this page's fingerprint card can recognize you on a
+              return visit. The defenses that work take two opposite strategies: <strong>blend in</strong> (Tor Browser makes
+              everyone look identical) or <strong>add noise</strong> (Brave randomizes canvas/audio/WebGL output per site, so
+              your ID never repeats). Blocking trackers outright (uBlock Origin, Firefox's tracking protection) cuts off most of
+              the parties doing the fingerprinting in the first place.
+            </p>
+            <p>
+              Each card above shows one signal, how it's read, and what reduces it. For a research-grade uniqueness estimate
+              against a real population, see <a href="https://coveryourtracks.eff.org/" target="_blank" rel="noopener noreferrer">EFF's
+              Cover Your Tracks</a>; for the underlying science, the EFF's 2010 <em>Panopticlick</em> paper started the field.
+            </p>
+          </section>
         </div>
       </main>
 

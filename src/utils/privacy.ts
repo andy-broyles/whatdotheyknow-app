@@ -10,6 +10,9 @@ export interface IPInfo {
   timezone: string;
   latitude: number;
   longitude: number;
+  // true/false when the API reports proxy/VPN/hosting status; null = API doesn't say
+  vpnOrProxy: boolean | null;
+  source: string;
 }
 
 export interface WebRTCInfo {
@@ -42,6 +45,8 @@ export async function getIPInfo(): Promise<IPInfo | null> {
         timezone: (data.timezone as string) || 'Unknown',
         latitude: (data.latitude as number) || 0,
         longitude: (data.longitude as number) || 0,
+        vpnOrProxy: null, // ipapi.co free tier doesn't report proxy status
+        source: 'ipapi.co',
       }),
     },
     {
@@ -51,24 +56,36 @@ export async function getIPInfo(): Promise<IPInfo | null> {
         city: (data.cityName as string) || 'Unknown',
         country: (data.countryName as string) || 'Unknown',
         region: (data.regionName as string) || 'Unknown',
-        isp: data.isProxy ? 'Proxy/VPN Detected' : 'Unknown',
+        isp: 'Unknown',
         timezone: (data.timeZone as string) || 'Unknown',
         latitude: (data.latitude as number) || 0,
         longitude: (data.longitude as number) || 0,
+        vpnOrProxy: typeof data.isProxy === 'boolean' ? data.isProxy : null,
+        source: 'freeipapi.com',
       }),
     },
     {
       url: 'https://ipwho.is/',
-      parse: (data: Record<string, unknown>) => ({
-        ip: (data.ip as string) || 'Unknown',
-        city: (data.city as string) || 'Unknown',
-        country: (data.country as string) || 'Unknown',
-        region: (data.region as string) || 'Unknown',
-        isp: ((data.connection as Record<string, unknown>)?.isp as string) || 'Unknown',
-        timezone: ((data.timezone as Record<string, unknown>)?.id as string) || 'Unknown',
-        latitude: (data.latitude as number) || 0,
-        longitude: (data.longitude as number) || 0,
-      }),
+      parse: (data: Record<string, unknown>) => {
+        const security = data.security as Record<string, unknown> | undefined;
+        const conn = data.connection as Record<string, unknown> | undefined;
+        let vpnOrProxy: boolean | null = null;
+        if (security && (typeof security.vpn === 'boolean' || typeof security.proxy === 'boolean')) {
+          vpnOrProxy = security.vpn === true || security.proxy === true || security.hosting === true;
+        }
+        return {
+          ip: (data.ip as string) || 'Unknown',
+          city: (data.city as string) || 'Unknown',
+          country: (data.country as string) || 'Unknown',
+          region: (data.region as string) || 'Unknown',
+          isp: (conn?.isp as string) || 'Unknown',
+          timezone: ((data.timezone as Record<string, unknown>)?.id as string) || 'Unknown',
+          latitude: (data.latitude as number) || 0,
+          longitude: (data.longitude as number) || 0,
+          vpnOrProxy,
+          source: 'ipwho.is',
+        };
+      },
     },
   ];
 
@@ -487,6 +504,195 @@ export async function getStorageEstimate(): Promise<{ quota: number; usage: numb
     return { quota, usage, usagePercent };
   } catch {
     return null;
+  }
+}
+
+// Audio fingerprint: render a fixed oscillator through a compressor in an
+// OfflineAudioContext and hash the output samples. Like canvas, tiny
+// hardware/driver differences in float math make the result identifying.
+export async function getAudioFingerprint(): Promise<string> {
+  try {
+    const OfflineCtx = window.OfflineAudioContext ||
+      (window as Window & { webkitOfflineAudioContext?: typeof OfflineAudioContext }).webkitOfflineAudioContext;
+    if (!OfflineCtx) return 'Not available';
+
+    const ctx = new OfflineCtx(1, 44100, 44100);
+    const oscillator = ctx.createOscillator();
+    oscillator.type = 'triangle';
+    oscillator.frequency.value = 10000;
+
+    const compressor = ctx.createDynamicsCompressor();
+    compressor.threshold.value = -50;
+    compressor.knee.value = 40;
+    compressor.ratio.value = 12;
+    compressor.attack.value = 0;
+    compressor.release.value = 0.25;
+
+    oscillator.connect(compressor);
+    compressor.connect(ctx.destination);
+    oscillator.start(0);
+
+    const buffer = await ctx.startRendering();
+    const samples = buffer.getChannelData(0);
+    // Sum a slice of samples — the standard audio-fingerprint reduction
+    let sum = 0;
+    for (let i = 4500; i < 5000; i++) sum += Math.abs(samples[i]);
+    return sum.toString();
+  } catch {
+    return 'Not available';
+  }
+}
+
+// Media device counts — enumerable WITHOUT any permission prompt
+// (labels stay hidden until permission is granted, but counts leak)
+export async function getMediaDeviceCounts(): Promise<{ audioinput: number; audiooutput: number; videoinput: number } | null> {
+  try {
+    if (!navigator.mediaDevices?.enumerateDevices) return null;
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const counts = { audioinput: 0, audiooutput: 0, videoinput: 0 };
+    for (const d of devices) {
+      if (d.kind in counts) counts[d.kind as keyof typeof counts]++;
+    }
+    return counts;
+  } catch {
+    return null;
+  }
+}
+
+// Permission states — what you've already granted, silently re-usable by sites
+export interface PermissionState_ {
+  name: string;
+  state: string;
+}
+
+export async function getPermissionStates(): Promise<PermissionState_[]> {
+  if (!navigator.permissions?.query) return [];
+  const names = ['geolocation', 'notifications', 'camera', 'microphone', 'clipboard-read', 'midi'];
+  const results: PermissionState_[] = [];
+  for (const name of names) {
+    try {
+      const status = await navigator.permissions.query({ name: name as PermissionName });
+      results.push({ name, state: status.state });
+    } catch {
+      // Permission name not supported in this browser — skip rather than guess
+    }
+  }
+  return results;
+}
+
+// Client hints via User-Agent Client Hints API (Chromium).
+// High-entropy values (exact OS version, architecture, device model) are
+// available to any script that asks — no permission needed.
+export interface ClientHintsInfo {
+  supported: boolean;
+  brands: string[];
+  mobile: boolean | null;
+  platform: string | null;
+  platformVersion: string | null;
+  architecture: string | null;
+  model: string | null;
+  fullVersion: string | null;
+}
+
+export async function getClientHints(): Promise<ClientHintsInfo> {
+  const uad = (navigator as Navigator & {
+    userAgentData?: {
+      brands: { brand: string; version: string }[];
+      mobile: boolean;
+      platform: string;
+      getHighEntropyValues(hints: string[]): Promise<Record<string, unknown>>;
+    };
+  }).userAgentData;
+
+  if (!uad) {
+    return { supported: false, brands: [], mobile: null, platform: null, platformVersion: null, architecture: null, model: null, fullVersion: null };
+  }
+
+  const result: ClientHintsInfo = {
+    supported: true,
+    brands: uad.brands.filter(b => !b.brand.includes('Not')).map(b => `${b.brand} ${b.version}`),
+    mobile: uad.mobile,
+    platform: uad.platform,
+    platformVersion: null,
+    architecture: null,
+    model: null,
+    fullVersion: null,
+  };
+
+  try {
+    const high = await uad.getHighEntropyValues(['platformVersion', 'architecture', 'model', 'uaFullVersion']);
+    result.platformVersion = (high.platformVersion as string) || null;
+    result.architecture = (high.architecture as string) || null;
+    result.model = (high.model as string) || null;
+    result.fullVersion = (high.uaFullVersion as string) || null;
+  } catch {
+    // high-entropy values denied — low-entropy data above is still valid
+  }
+  return result;
+}
+
+// System preferences readable via CSS media queries — each is a fingerprint bit
+export function getSystemPreferences() {
+  const mq = (q: string) => window.matchMedia(q).matches;
+  return {
+    colorScheme: mq('(prefers-color-scheme: dark)') ? 'Dark' : 'Light',
+    reducedMotion: mq('(prefers-reduced-motion: reduce)'),
+    highContrast: mq('(prefers-contrast: more)'),
+    touchSupport: navigator.maxTouchPoints > 0,
+    maxTouchPoints: navigator.maxTouchPoints,
+    pointerType: mq('(pointer: coarse)') ? 'Touch (coarse)' : mq('(pointer: fine)') ? 'Mouse/trackpad (fine)' : 'None detected',
+  };
+}
+
+// Battery Status API (Chromium only; removed from Firefox/Safari for privacy)
+export async function getBatteryInfo(): Promise<{ level: number; charging: boolean } | null> {
+  try {
+    const nav = navigator as Navigator & { getBattery?: () => Promise<{ level: number; charging: boolean }> };
+    if (!nav.getBattery) return null;
+    const battery = await nav.getBattery();
+    return { level: Math.round(battery.level * 100), charging: battery.charging };
+  } catch {
+    return null;
+  }
+}
+
+// Fingerprint persistence demo. This is the ONE thing the app stores, and it
+// stays in the user's own localStorage. It demonstrates that a fingerprint
+// recognizes you across visits with no cookies involved.
+const FP_HISTORY_KEY = 'wdtk-fingerprint-history';
+
+export interface FingerprintHistory {
+  previousId: string | null;
+  previousDate: string | null;
+  matches: boolean | null; // null on first visit
+}
+
+// Compare-and-record only once per page load — otherwise StrictMode's double
+// effect (or the Refresh button) would record the current visit and then
+// immediately "match" it, telling first-time visitors they were seen before.
+let fpHistoryThisLoad: FingerprintHistory | null = null;
+
+export function checkFingerprintHistory(currentId: string): FingerprintHistory {
+  if (fpHistoryThisLoad) return fpHistoryThisLoad;
+  try {
+    const raw = localStorage.getItem(FP_HISTORY_KEY);
+    const prev = raw ? (JSON.parse(raw) as { id: string; date: string }) : null;
+    localStorage.setItem(FP_HISTORY_KEY, JSON.stringify({ id: currentId, date: new Date().toISOString() }));
+    fpHistoryThisLoad = prev
+      ? { previousId: prev.id, previousDate: prev.date, matches: prev.id === currentId }
+      : { previousId: null, previousDate: null, matches: null };
+    return fpHistoryThisLoad;
+  } catch {
+    return { previousId: null, previousDate: null, matches: null };
+  }
+}
+
+export function clearFingerprintHistory(): void {
+  try {
+    localStorage.removeItem(FP_HISTORY_KEY);
+    fpHistoryThisLoad = { previousId: null, previousDate: null, matches: null };
+  } catch {
+    // storage unavailable — nothing to clear
   }
 }
 

@@ -88,6 +88,7 @@ body {
   justify-content: space-between;
   align-items: center;
   gap: 1rem;
+  flex-wrap: wrap;
 }
 
 .logo {
@@ -109,6 +110,12 @@ body {
   display: flex;
   align-items: center;
   gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 640px) {
+  .header { position: static; }
+  .btn { padding: 0.5rem 0.75rem; font-size: 0.8125rem; }
 }
 
 /* Buttons */
@@ -431,6 +438,123 @@ body {
   border-radius: 0.375rem;
   font-size: 0.8125rem;
   color: var(--text-secondary);
+}
+
+/* Card tip ("Reduce it:") */
+.card-tip {
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  background: var(--bg-secondary);
+  border-left: 3px solid var(--accent);
+  border-radius: 0 0.375rem 0.375rem 0;
+  padding: 0.5rem 0.75rem;
+  margin-top: 0.75rem;
+  line-height: 1.5;
+}
+
+.card-tip code {
+  font-size: 0.75rem;
+  background: var(--bg-card);
+  padding: 0.1em 0.3em;
+  border-radius: 0.25rem;
+  border: 1px solid var(--border-color);
+}
+
+/* Exposure summary panel */
+.summary-panel {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 1rem;
+  padding: 1.5rem;
+  box-shadow: var(--shadow);
+  margin-bottom: 2rem;
+}
+
+.summary-headline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  margin-bottom: 1rem;
+}
+
+.summary-headline h2 {
+  font-size: 1.25rem;
+  margin-bottom: 0.25rem;
+}
+
+.summary-sub {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  max-width: 640px;
+}
+
+.summary-sub a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+.summary-score {
+  flex-shrink: 0;
+  width: 72px;
+  height: 72px;
+  border: 3px solid;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
+.summary-signals {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 0.375rem 1.5rem;
+}
+
+.summary-signals li {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-size: 0.8125rem;
+}
+
+.signal-dot { flex-shrink: 0; }
+.signal-exposed .signal-dot { color: var(--warning); }
+.signal-safe .signal-dot { color: var(--success); }
+.signal-label { color: var(--text-secondary); font-weight: 500; }
+.signal-detail { color: var(--text-muted); margin-left: auto; text-align: right; }
+
+@media (max-width: 600px) {
+  .summary-headline { flex-direction: column-reverse; text-align: center; }
+  .signal-detail { display: none; }
+}
+
+/* Explainer section */
+.explainer {
+  max-width: 760px;
+  margin: 3rem auto 1rem;
+}
+
+.explainer h2 {
+  font-size: 1.5rem;
+  margin-bottom: 1rem;
+}
+
+.explainer p {
+  color: var(--text-secondary);
+  font-size: 0.9375rem;
+  margin-bottom: 1rem;
+  line-height: 1.7;
+}
+
+.explainer a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
 }
 
 /* VPN Section */
