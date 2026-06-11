@@ -120,6 +120,8 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<PrivacyData | null>(null);
   const [copyStatus, setCopyStatus] = useState<'idle' | 'copied' | 'error'>('idle');
+  const [downloadMenuOpen, setDownloadMenuOpen] = useState(false);
+  const [redactDownload, setRedactDownload] = useState(false);
 
   const collectData = useCallback(async () => {
     setLoading(true);
@@ -202,6 +204,18 @@ function App() {
     document.documentElement.setAttribute('data-theme', darkMode ? 'dark' : 'light');
   }, [darkMode]);
 
+  // Close the download menu on outside click
+  useEffect(() => {
+    if (!downloadMenuOpen) return;
+    const close = (e: MouseEvent) => {
+      if (!(e.target as Element).closest('.download-menu-wrapper')) {
+        setDownloadMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [downloadMenuOpen]);
+
   const handleRefresh = () => {
     collectData();
   };
@@ -209,49 +223,86 @@ function App() {
   const formatStorageBytes = (n: number) =>
     n < 1024 ? n + ' B' : n < 1024 * 1024 ? (n / 1024).toFixed(1) + ' KB' : (n / (1024 * 1024)).toFixed(1) + ' MB';
 
-  const buildReport = (redact: boolean) => {
-    if (!data) return '';
+  // Structured report sections — single source for text, JSON, and PDF output
+  const buildSections = (redact: boolean): { heading: string; rows: [string, string][] }[] => {
+    if (!data) return [];
     const maskIP = (ip: string) => {
       if (!redact) return ip;
       if (ip.includes(':')) return ip.split(':').slice(0, 2).join(':') + ':xxxx…';
       return ip.split('.').slice(0, 2).join('.') + '.xxx.xxx';
     };
-    const lines: string[] = [
-      '— What Do They Know? — Privacy Report' + (redact ? ' (IPs redacted)' : ''),
-      '',
-      'IP & Location: ' + (data.ipInfo ? `${maskIP(data.ipInfo.ip)} | ${data.ipInfo.city}, ${data.ipInfo.region}, ${data.ipInfo.country} | ${data.ipInfo.isp}` + (data.ipInfo.vpnOrProxy !== null ? ` | VPN/proxy per ${data.ipInfo.source}: ${data.ipInfo.vpnOrProxy ? 'Yes' : 'No'}` : '') : 'Protected or blocked'),
-      'Browser Fingerprint: ' + data.fingerprint,
-      'Canvas Fingerprint: ' + data.canvasFingerprint,
-      'User Agent: ' + data.parsedUA.browser + ' / ' + data.parsedUA.os,
-      'Screen: ' + data.screen.width + '×' + data.screen.height + ', ' + data.screen.colorDepth + '-bit, ' + data.screen.pixelRatio + 'x',
-      'Timezone: ' + data.locale.timezone + ' | Language: ' + data.locale.language,
-      'WebGL: ' + (data.webgl.available ? data.webgl.vendor + ' / ' + data.webgl.renderer : 'N/A'),
-      'WebRTC: ' + (data.webrtc.leaking ? 'Public IP exposed: ' + data.webrtc.publicIPs.map(maskIP).join(', ') : 'No public IP exposed') +
-        (data.webrtc.localIPs.length || data.webrtc.mdnsCandidates.length
-          ? ' | Local candidates: ' + [...data.webrtc.localIPs.map(maskIP), ...data.webrtc.mdnsCandidates].join(', ')
-          : ''),
-      'Audio Fingerprint: ' + data.audioFingerprint,
-      'Media devices: ' + (data.mediaDevices ? `${data.mediaDevices.videoinput} camera(s), ${data.mediaDevices.audioinput} mic(s), ${data.mediaDevices.audiooutput} speaker(s)` : 'N/A'),
-      'Permissions: ' + (data.permissions.length ? data.permissions.map(p => `${p.name}=${p.state}`).join(', ') : 'N/A'),
-      'Client hints: ' + (data.clientHints.supported ? [data.clientHints.brands.join(' / '), data.clientHints.platform, data.clientHints.platformVersion, data.clientHints.architecture].filter(Boolean).join(' | ') : 'Not supported'),
-      'Preferences: ' + `${data.preferences.colorScheme} mode, reduced motion ${data.preferences.reducedMotion ? 'on' : 'off'}, touch ${data.preferences.touchSupport ? 'yes (' + data.preferences.maxTouchPoints + ' points)' : 'no'}, ${data.preferences.pointerType}`,
-      'Battery: ' + (data.battery ? `${data.battery.level}%${data.battery.charging ? ' (charging)' : ''}` : 'Not exposed'),
-      'Languages: ' + data.locale.languages.join(', '),
-      'Fingerprint vs last visit: ' + (data.fpHistory.matches === null ? 'First recorded visit' : data.fpHistory.matches ? 'SAME — recognizable without cookies' : 'Different'),
-      'Fonts detected: ' + data.fonts.length,
-      'Ad blocker: ' + (data.adBlocker ? 'Yes' : 'No'),
-      'Cookies: ' + (data.cookies.enabled ? 'Enabled' : 'Disabled') + ' | First-party write: ' + data.cookies.firstPartyWrite + ' | Third-party: ' + data.cookies.thirdParty,
-      'Connection: ' + (data.connection ? `Type ${data.connection.effectiveType ?? '?'}, downlink ${data.connection.downlink ?? '?'} Mbps, RTT ${data.connection.rtt ?? '?'} ms, saveData ${data.connection.saveData}` : 'N/A'),
-      'Hardware: ' + data.hardware.hardwareConcurrency + ' cores' + (data.hardware.deviceMemory != null ? ', ~' + data.hardware.deviceMemory + ' GB RAM' : ''),
-      'Referrer: ' + data.referrer,
-      'Do Not Track: ' + data.doNotTrack + ' | Global Privacy Control: ' + data.gpc,
-      'Storage: ' + (data.storageEstimate ? `${formatStorageBytes(data.storageEstimate.usage)} / ${formatStorageBytes(data.storageEstimate.quota)} (${data.storageEstimate.usagePercent})` : 'N/A'),
+    const sections: { heading: string; rows: [string, string][] }[] = [
+      {
+        heading: 'Network & Location',
+        rows: [
+          ['IP & Location', data.ipInfo ? `${maskIP(data.ipInfo.ip)} | ${data.ipInfo.city}, ${data.ipInfo.region}, ${data.ipInfo.country} | ${data.ipInfo.isp}` + (data.ipInfo.vpnOrProxy !== null ? ` | VPN/proxy per ${data.ipInfo.source}: ${data.ipInfo.vpnOrProxy ? 'Yes' : 'No'}` : '') : 'Protected or blocked'],
+          ['WebRTC', (data.webrtc.leaking ? 'Public IP exposed: ' + data.webrtc.publicIPs.map(maskIP).join(', ') : 'No public IP exposed') +
+            (data.webrtc.localIPs.length || data.webrtc.mdnsCandidates.length
+              ? ' | Local candidates: ' + [...data.webrtc.localIPs.map(maskIP), ...data.webrtc.mdnsCandidates].join(', ')
+              : '')],
+          ['Connection', data.connection ? `Type ${data.connection.effectiveType ?? '?'}, downlink ${data.connection.downlink ?? '?'} Mbps, RTT ${data.connection.rtt ?? '?'} ms, saveData ${data.connection.saveData}` : 'N/A'],
+          ['Referrer', data.referrer],
+        ],
+      },
+      {
+        heading: 'Fingerprints',
+        rows: [
+          ['Browser Fingerprint', data.fingerprint],
+          ['Fingerprint vs last visit', data.fpHistory.matches === null ? 'First recorded visit' : data.fpHistory.matches ? 'SAME — recognizable without cookies' : 'Different'],
+          ['Canvas Fingerprint', data.canvasFingerprint],
+          ['Audio Fingerprint', data.audioFingerprint],
+          ['WebGL', data.webgl.available ? data.webgl.vendor + ' / ' + data.webgl.renderer : 'N/A'],
+          ['Fonts detected', String(data.fonts.length)],
+        ],
+      },
+      {
+        heading: 'Browser & System',
+        rows: [
+          ['User Agent', data.parsedUA.browser + ' / ' + data.parsedUA.os],
+          ['Client hints', data.clientHints.supported ? [data.clientHints.brands.join(' / '), data.clientHints.platform, data.clientHints.platformVersion, data.clientHints.architecture].filter(Boolean).join(' | ') : 'Not supported'],
+          ['Screen', `${data.screen.width}×${data.screen.height}, ${data.screen.colorDepth}-bit, ${data.screen.pixelRatio}x`],
+          ['Timezone', data.locale.timezone],
+          ['Languages', data.locale.languages.join(', ')],
+          ['Preferences', `${data.preferences.colorScheme} mode, reduced motion ${data.preferences.reducedMotion ? 'on' : 'off'}, touch ${data.preferences.touchSupport ? 'yes (' + data.preferences.maxTouchPoints + ' points)' : 'no'}, ${data.preferences.pointerType}`],
+          ['Hardware', data.hardware.hardwareConcurrency + ' cores' + (data.hardware.deviceMemory != null ? ', ~' + data.hardware.deviceMemory + ' GB RAM' : '')],
+          ['Battery', data.battery ? `${data.battery.level}%${data.battery.charging ? ' (charging)' : ''}` : 'Not exposed'],
+          ['Media devices', data.mediaDevices ? `${data.mediaDevices.videoinput} camera(s), ${data.mediaDevices.audioinput} mic(s), ${data.mediaDevices.audiooutput} speaker(s)` : 'N/A'],
+        ],
+      },
+      {
+        heading: 'Privacy Settings',
+        rows: [
+          ['Permissions', data.permissions.length ? data.permissions.map(p => `${p.name}=${p.state}`).join(', ') : 'N/A'],
+          ['Ad blocker', data.adBlocker ? 'Yes' : 'No'],
+          ['Cookies', (data.cookies.enabled ? 'Enabled' : 'Disabled') + ' | First-party write: ' + data.cookies.firstPartyWrite + ' | Third-party: ' + data.cookies.thirdParty],
+          ['Do Not Track', data.doNotTrack],
+          ['Global Privacy Control', data.gpc],
+          ['Storage', data.storageEstimate ? `${formatStorageBytes(data.storageEstimate.usage)} / ${formatStorageBytes(data.storageEstimate.quota)} (${data.storageEstimate.usagePercent})` : 'N/A'],
+        ],
+      },
     ];
     if (data.speedTests?.length) {
-      lines.push('', 'Speed tests:');
-      data.speedTests.forEach(t => lines.push(`  ${t.server} (${t.location}): ${t.latency != null ? t.latency + ' ms' : 'Failed'}`));
+      sections.push({
+        heading: 'Server Response Times',
+        rows: data.speedTests.map(t => [`${t.server} (${t.location})`, t.latency != null ? t.latency + ' ms' : 'Failed'] as [string, string]),
+      });
     }
-    lines.push('', 'Generated at whatdotheyknow.app — nothing stored or logged by this site.');
+    return sections;
+  };
+
+  const reportTitle = (redact: boolean) => 'What Do They Know? — Privacy Report' + (redact ? ' (IPs redacted)' : '');
+  const REPORT_FOOTNOTE = 'Generated at whatdotheyknow.app — nothing stored or logged by this site.';
+
+  const buildReport = (redact: boolean) => {
+    const sections = buildSections(redact);
+    if (!sections.length) return '';
+    const lines: string[] = ['— ' + reportTitle(redact), ''];
+    for (const s of sections) {
+      lines.push(s.heading.toUpperCase());
+      for (const [k, v] of s.rows) lines.push(`  ${k}: ${v}`);
+      lines.push('');
+    }
+    lines.push(REPORT_FOOTNOTE);
     return lines.join('\n');
   };
 
@@ -268,16 +319,91 @@ function App() {
     }
   };
 
-  const handleDownloadReport = () => {
-    const report = buildReport(false);
-    if (!report) return;
-    const blob = new Blob([report], { type: 'text/plain;charset=utf-8' });
+  const saveBlob = (blob: Blob, filename: string) => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'whatdotheyknow-report.txt';
+    a.download = filename;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  const handleDownloadReport = async (format: 'pdf' | 'txt' | 'json', redact: boolean) => {
+    const sections = buildSections(redact);
+    if (!sections.length) return;
+    setDownloadMenuOpen(false);
+    const suffix = redact ? '-redacted' : '';
+
+    if (format === 'txt') {
+      saveBlob(new Blob([buildReport(redact)], { type: 'text/plain;charset=utf-8' }), `whatdotheyknow-report${suffix}.txt`);
+      return;
+    }
+
+    if (format === 'json') {
+      const json = {
+        title: reportTitle(redact),
+        generatedAt: new Date().toISOString(),
+        note: REPORT_FOOTNOTE,
+        sections: sections.map(s => ({
+          heading: s.heading,
+          values: Object.fromEntries(s.rows),
+        })),
+      };
+      saveBlob(new Blob([JSON.stringify(json, null, 2)], { type: 'application/json' }), `whatdotheyknow-report${suffix}.json`);
+      return;
+    }
+
+    // PDF — jsPDF is lazy-loaded so it doesn't weigh down the initial bundle.
+    // Generated entirely in the browser; the report never leaves the machine.
+    const { jsPDF } = await import('jspdf');
+    const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const margin = 48;
+    const labelWidth = 150;
+    const valueWidth = pageWidth - margin * 2 - labelWidth;
+    let y = margin;
+
+    const ensureRoom = (needed: number) => {
+      if (y + needed > pageHeight - margin) {
+        doc.addPage();
+        y = margin;
+      }
+    };
+
+    doc.setFont('helvetica', 'bold').setFontSize(16).setTextColor(40);
+    doc.text(reportTitle(redact), margin, y);
+    y += 20;
+    doc.setFont('helvetica', 'normal').setFontSize(9).setTextColor(120);
+    doc.text(new Date().toLocaleString(), margin, y);
+    y += 24;
+
+    for (const s of sections) {
+      ensureRoom(40);
+      doc.setFont('helvetica', 'bold').setFontSize(12).setTextColor(79, 70, 229);
+      doc.text(s.heading, margin, y);
+      y += 6;
+      doc.setDrawColor(200).line(margin, y, pageWidth - margin, y);
+      y += 14;
+
+      doc.setFontSize(9);
+      for (const [label, value] of s.rows) {
+        const valueLines = doc.splitTextToSize(value, valueWidth) as string[];
+        const rowHeight = Math.max(valueLines.length, 1) * 12;
+        ensureRoom(rowHeight + 4);
+        doc.setFont('helvetica', 'bold').setTextColor(80);
+        doc.text(label, margin, y);
+        doc.setFont('helvetica', 'normal').setTextColor(40);
+        doc.text(valueLines, margin + labelWidth, y);
+        y += rowHeight + 4;
+      }
+      y += 10;
+    }
+
+    ensureRoom(20);
+    doc.setFont('helvetica', 'italic').setFontSize(8).setTextColor(140);
+    doc.text(REPORT_FOOTNOTE, margin, y);
+    doc.save(`whatdotheyknow-report${suffix}.pdf`);
   };
 
   const handleClearHistory = () => {
@@ -316,12 +442,45 @@ function App() {
             <button className="btn btn-secondary" onClick={() => handleCopyReport(true)} disabled={loading || !data} title="Copy report with IP addresses masked — safe to share">
               Copy redacted
             </button>
-            <button className="btn btn-secondary" onClick={handleDownloadReport} disabled={loading || !data} title="Download full report as a .txt file">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
-              </svg>
-              Download
-            </button>
+            <div className="download-menu-wrapper">
+              <button
+                className="btn btn-secondary"
+                onClick={() => setDownloadMenuOpen(o => !o)}
+                disabled={loading || !data}
+                aria-haspopup="menu"
+                aria-expanded={downloadMenuOpen}
+                title="Download the report — choose a format"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
+                </svg>
+                Download
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M6 9l6 6 6-6"/>
+                </svg>
+              </button>
+              {downloadMenuOpen && (
+                <div className="download-menu" role="menu">
+                  <button role="menuitem" onClick={() => handleDownloadReport('pdf', redactDownload)}>
+                    PDF <span className="menu-hint">formatted document</span>
+                  </button>
+                  <button role="menuitem" onClick={() => handleDownloadReport('txt', redactDownload)}>
+                    Text <span className="menu-hint">plain .txt</span>
+                  </button>
+                  <button role="menuitem" onClick={() => handleDownloadReport('json', redactDownload)}>
+                    JSON <span className="menu-hint">structured data</span>
+                  </button>
+                  <label className="menu-checkbox">
+                    <input
+                      type="checkbox"
+                      checked={redactDownload}
+                      onChange={e => setRedactDownload(e.target.checked)}
+                    />
+                    Mask IP addresses
+                  </label>
+                </div>
+              )}
+            </div>
             <button className="btn btn-primary" onClick={handleRefresh} disabled={loading}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M23 4v6h-6M1 20v-6h6"/>
