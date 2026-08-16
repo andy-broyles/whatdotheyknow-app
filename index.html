@@ -7,8 +7,8 @@
     <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
 
     <!-- Primary Meta Tags (SEO) - per Google SEO Starter Guide -->
-    <title>What the Internet Knows About You – Free Privacy Check</title>
-    <meta name="description" content="See what websites can see about you: IP, fingerprint, WebRTC, connection, hardware, referrer, storage & more. Free, nothing stored or logged. Copy report to clipboard." />
+    <title>What Does the Internet Know About Me? Free Browser Check</title>
+    <meta name="description" content="Live test — not an article. See what your browser reveals to every website: IP, fingerprint, WebRTC, fonts, hardware. Free. Nothing stored or logged." />
     <link rel="canonical" href="https://whatdotheyknow.app/" />
 
     <!-- Robots: allow indexing -->
@@ -18,16 +18,16 @@
     <!-- Open Graph / Social -->
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://whatdotheyknow.app/" />
-    <meta property="og:title" content="What the Internet Knows About You – Free Privacy Check" />
-    <meta property="og:description" content="See what websites can see about you: IP, fingerprint, WebRTC, connection, hardware, referrer, storage & more. Free, nothing stored or logged." />
+    <meta property="og:title" content="What Does the Internet Know About Me? Free Browser Check" />
+    <meta property="og:description" content="Live test — not an article. See what your browser reveals to every website: IP, fingerprint, WebRTC, fonts, hardware. Free. Nothing stored or logged." />
     <meta property="og:image" content="https://whatdotheyknow.app/og-image.png" />
     <meta property="og:locale" content="en_US" />
     <meta property="og:site_name" content="What Do They Know?" />
 
     <!-- Twitter -->
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="What the Internet Knows About You – Free Privacy Check" />
-    <meta name="twitter:description" content="See what websites can see about you: IP, fingerprint, WebRTC, connection, hardware, referrer, storage & more. Free, nothing stored or logged." />
+    <meta name="twitter:title" content="What Does the Internet Know About Me? Free Browser Check" />
+    <meta name="twitter:description" content="Live test — not an article. See what your browser reveals to every website: IP, fingerprint, WebRTC, fonts, hardware. Free. Nothing stored or logged." />
 
     <!-- Favicon -->
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
@@ -36,13 +36,70 @@
     <script type="application/ld+json">
     {
       "@context": "https://schema.org",
-      "@type": "WebApplication",
-      "name": "What Do They Know?",
-      "url": "https://whatdotheyknow.app/",
-      "description": "Free privacy check tool. See what websites can collect: IP, browser fingerprint, WebRTC leaks, canvas fingerprint, connection type, hardware (cores, memory), referrer, Do Not Track, storage quota, speed tests & more. Nothing is stored or logged by this site. Copy report to clipboard.",
-      "applicationCategory": "UtilitiesApplication",
-      "operatingSystem": "Any",
-      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+      "@graph": [
+        {
+          "@type": "WebApplication",
+          "name": "What Do They Know?",
+          "alternateName": "What Does the Internet Know About Me",
+          "url": "https://whatdotheyknow.app/",
+          "description": "Live browser privacy check. See what your browser reveals to every website: IP, fingerprint, WebRTC leaks, canvas, fonts, hardware, and more. Nothing is stored or logged.",
+          "applicationCategory": "UtilitiesApplication",
+          "operatingSystem": "Any",
+          "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+          "featureList": [
+            "IP address and geolocation",
+            "Browser fingerprint",
+            "Canvas and audio fingerprint",
+            "WebRTC leak test",
+            "Font, hardware, and client-hint detection"
+          ]
+        },
+        {
+          "@type": "FAQPage",
+          "mainEntity": [
+            {
+              "@type": "Question",
+              "name": "What does the internet know about me?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "Any website you visit can read your IP address and approximate location, plus a browser fingerprint built from your screen, fonts, GPU, audio stack, language, timezone, and other properties your browser exposes with no permission prompt. This page runs those same checks in your browser and shows the result. Nothing is stored or logged here."
+              }
+            },
+            {
+              "@type": "Question",
+              "name": "What information does my browser reveal to websites?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "Your browser reveals IP and ISP, a stable fingerprint hash, canvas and audio rendering hashes, WebGL GPU model, installed fonts, CPU cores and RAM, screen size, timezone, language, client hints (exact OS build on Chrome), cookie and storage capability, and whether WebRTC leaks your real public IP."
+              }
+            },
+            {
+              "@type": "Question",
+              "name": "What does every website know about you?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "Every site can see the same first-party signals: who your ISP is, rough location, device class, and enough fingerprint bits to recognize a return visit without cookies. They cannot see your name, email, or files unless you type them. The live report above is the same data a typical site can collect just from a visit."
+              }
+            },
+            {
+              "@type": "Question",
+              "name": "How much does the internet know about me?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "This tool counts which tracking surfaces work in your browser (IP, fingerprint, canvas, audio, GPU, fonts, hardware, client hints, WebRTC, opt-out signals). That is a count of techniques, not a uniqueness score. For a research-grade estimate against a real population, use EFF's Cover Your Tracks."
+              }
+            },
+            {
+              "@type": "Question",
+              "name": "Can I stop websites from fingerprinting me?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "Two strategies work: blend in (Tor Browser makes users look alike) or add noise (Brave farbling randomizes canvas, audio, and WebGL per site). uBlock Origin and Firefox tracking protection cut off most parties doing the fingerprinting. Clearing cookies does not reset a fingerprint."
+              }
+            }
+          ]
+        }
+      ]
     }
     </script>
 
@@ -67,7 +124,7 @@
   <body>
     <div id="root"></div>
     <noscript>
-      <p>What Do They Know? is a free privacy check tool. It requires JavaScript. Enable JavaScript to see what websites can detect: IP, fingerprint, WebRTC, connection, hardware, referrer, storage, and more.</p>
+      <p>What Do They Know? is a free live privacy check. Enable JavaScript to see what your browser reveals to every website: IP, fingerprint, WebRTC, fonts, hardware, and more. Nothing is stored or logged.</p>
     </noscript>
     <script type="module" src="/src/main.tsx"></script>
   </body>

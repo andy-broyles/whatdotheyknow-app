@@ -507,8 +507,8 @@ function App() {
       {/* Hero */}
       <section className="hero">
         <div className="container">
-          <h1>What the Internet Knows About You</h1>
-          <p>See exactly what information websites can collect about you just by visiting them. This site stores nothing and has no analytics.</p>
+          <h1>What does the internet know about you?</h1>
+          <p>Live check of what every website can read from your browser — IP, fingerprint, WebRTC, fonts, hardware. This site stores nothing.</p>
           <div className="privacy-badge">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
@@ -553,7 +553,7 @@ function App() {
               </section>
             );
           })()}
-          <h2 className="section-heading">What websites can see about you</h2>
+          <h2 className="section-heading">What information your browser reveals</h2>
           <div className="cards-grid">
             {/* IP Address Card */}
             <div className="card">
@@ -1474,6 +1474,58 @@ function App() {
               against a real population, see <a href="https://coveryourtracks.eff.org/" target="_blank" rel="noopener noreferrer">EFF's
               Cover Your Tracks</a>; for the underlying science, the EFF's 2010 <em>Panopticlick</em> paper started the field.
             </p>
+          </section>
+
+          <section className="faq" aria-labelledby="faq-heading">
+            <h2 id="faq-heading">What information does my browser reveal?</h2>
+            <p className="faq-lede">
+              These are the questions people type into Google. The short answers match the live report above.
+            </p>
+            <div className="faq-list">
+              <details open>
+                <summary>What does the internet know about me?</summary>
+                <p>
+                  Any website you visit can read your IP address and approximate location, plus a browser fingerprint
+                  built from your screen, fonts, GPU, audio stack, language, timezone, and other properties your browser
+                  exposes with no permission prompt. This page runs those same checks in your browser and shows the
+                  result. Nothing is stored or logged here.
+                </p>
+              </details>
+              <details>
+                <summary>What information does my browser reveal to websites?</summary>
+                <p>
+                  Your browser reveals IP and ISP, a stable fingerprint hash, canvas and audio rendering hashes, WebGL
+                  GPU model, installed fonts, CPU cores and RAM, screen size, timezone, language, client hints (exact OS
+                  build on Chrome), cookie and storage capability, and whether WebRTC leaks your real public IP.
+                </p>
+              </details>
+              <details>
+                <summary>What does every website know about you?</summary>
+                <p>
+                  Every site can see the same first-party signals: who your ISP is, rough location, device class, and
+                  enough fingerprint bits to recognize a return visit without cookies. They cannot see your name, email,
+                  or files unless you type them. The live report above is the same data a typical site can collect just
+                  from a visit.
+                </p>
+              </details>
+              <details>
+                <summary>How much does the internet know about me?</summary>
+                <p>
+                  This tool counts which tracking surfaces work in your browser (IP, fingerprint, canvas, audio, GPU,
+                  fonts, hardware, client hints, WebRTC, opt-out signals). That is a count of techniques, not a uniqueness
+                  score. For a research-grade estimate against a real population, use{' '}
+                  <a href="https://coveryourtracks.eff.org/" target="_blank" rel="noopener noreferrer">EFF's Cover Your Tracks</a>.
+                </p>
+              </details>
+              <details>
+                <summary>Can I stop websites from fingerprinting me?</summary>
+                <p>
+                  Two strategies work: blend in (Tor Browser makes users look alike) or add noise (Brave farbling
+                  randomizes canvas, audio, and WebGL per site). uBlock Origin and Firefox tracking protection cut off
+                  most parties doing the fingerprinting. Clearing cookies does not reset a fingerprint.
+                </p>
+              </details>
+            </div>
           </section>
         </div>
       </main>

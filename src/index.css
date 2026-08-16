@@ -618,6 +618,56 @@ body {
   text-underline-offset: 0.2em;
 }
 
+/* FAQ — query-matching Q&A; details keeps answers in the HTML for crawlers */
+.faq {
+  max-width: 760px;
+  margin: 2.5rem auto 1rem;
+}
+
+.faq h2 {
+  font-size: 1.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.faq-lede {
+  color: var(--text-secondary);
+  font-size: 0.9375rem;
+  margin-bottom: 1rem;
+  line-height: 1.7;
+}
+
+.faq-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.faq details {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+}
+
+.faq summary {
+  font-weight: 600;
+  cursor: pointer;
+  list-style-position: outside;
+}
+
+.faq details p {
+  color: var(--text-secondary);
+  font-size: 0.9375rem;
+  margin-top: 0.75rem;
+  line-height: 1.7;
+}
+
+.faq a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
 /* VPN Section */
 .vpn-section {
   background: linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(139, 92, 246, 0.1) 100%);
