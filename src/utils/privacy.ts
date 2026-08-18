@@ -18,9 +18,11 @@ export interface IPInfo {
 export interface WebRTCInfo {
   localIPs: string[];
   publicIPs: string[];
+  cgnatIPs: string[];
   mdnsCandidates: string[];
-  // True only when a PUBLIC IP is exposed via WebRTC. Local/mDNS candidates
-  // are visible to scripts but are not an IP leak by themselves.
+  // True only when a PUBLIC IP is exposed via WebRTC. Local, mDNS, and
+  // CGNAT (100.64.0.0/10) candidates are visible to scripts but are not
+  // an internet-facing leak by themselves.
   leaking: boolean;
 }
 
@@ -30,8 +32,10 @@ export interface WebGLInfo {
   available: boolean;
 }
 
+const IP_LOOKUP_TIMEOUT_MS = 3000;
+
 // Get IP and geolocation info
-export async function getIPInfo(): Promise<IPInfo | null> {
+export async function getIPInfo(signal?: AbortSignal): Promise<IPInfo | null> {
   // Try multiple APIs in sequence until one works
   const apis = [
     {
@@ -90,19 +94,27 @@ export async function getIPInfo(): Promise<IPInfo | null> {
   ];
 
   for (const api of apis) {
+    if (signal?.aborted) return null;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), IP_LOOKUP_TIMEOUT_MS);
+    const onAbort = () => controller.abort();
+    signal?.addEventListener('abort', onAbort);
     try {
-      const response = await fetch(api.url);
+      const response = await fetch(api.url, { signal: controller.signal });
       if (response.ok) {
         const data = await response.json();
-        // Check if we got valid data (has IP)
         const result = api.parse(data);
         if (result.ip && result.ip !== 'Unknown') {
           return result;
         }
       }
     } catch {
-      // Try next API
+      if (signal?.aborted) return null;
+      // Timeout, network error, or abort — try the next API
       continue;
+    } finally {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
     }
   }
 
@@ -215,16 +227,27 @@ function isPrivateIP(ip: string): boolean {
   );
 }
 
+// Carrier-grade NAT (RFC 6598): 100.64.0.0/10. Shared by many subscribers
+// behind an ISP; not a globally routable address, so not a public IP leak.
+function isCgnatIP(ip: string): boolean {
+  if (ip.includes(':')) return false;
+  const parts = ip.split('.').map(Number);
+  if (parts.length !== 4) return false;
+  const [a, b] = parts;
+  return a === 100 && b >= 64 && b <= 127;
+}
+
 // Detect WebRTC leaks
-export async function getWebRTCInfo(): Promise<WebRTCInfo> {
+export async function getWebRTCInfo(signal?: AbortSignal): Promise<WebRTCInfo> {
   const result: WebRTCInfo = {
     localIPs: [],
     publicIPs: [],
+    cgnatIPs: [],
     mdnsCandidates: [],
     leaking: false,
   };
 
-  if (!window.RTCPeerConnection) {
+  if (!window.RTCPeerConnection || signal?.aborted) {
     return result;
   }
 
@@ -235,35 +258,49 @@ export async function getWebRTCInfo(): Promise<WebRTCInfo> {
 
     const localIPs = new Set<string>();
     const publicIPs = new Set<string>();
+    const cgnatIPs = new Set<string>();
     const mdns = new Set<string>();
 
     pc.createDataChannel('');
 
     const offer = await pc.createOffer();
+    if (signal?.aborted) {
+      pc.close();
+      return result;
+    }
     await pc.setLocalDescription(offer);
+    if (signal?.aborted) {
+      pc.close();
+      return result;
+    }
 
     return new Promise((resolve) => {
+      let settled = false;
       const finish = () => {
+        if (settled) return;
+        settled = true;
+        signal?.removeEventListener('abort', finish);
+        clearTimeout(timeout);
         pc.close();
         result.localIPs = Array.from(localIPs);
         result.publicIPs = Array.from(publicIPs);
+        result.cgnatIPs = Array.from(cgnatIPs);
         result.mdnsCandidates = Array.from(mdns);
-        // Only a public IP exposed through ICE is an actual IP leak.
         result.leaking = publicIPs.size > 0;
         resolve(result);
       };
 
       const timeout = setTimeout(finish, 3000);
+      signal?.addEventListener('abort', finish, { once: true });
+      if (signal?.aborted) finish();
 
       pc.onicecandidate = (event) => {
         if (!event.candidate) {
-          clearTimeout(timeout);
           finish();
           return;
         }
 
         const candidate = event.candidate.candidate;
-        // Modern browsers replace local IPs with mDNS hostnames (xxx.local)
         const mdnsMatch = candidate.match(/[a-f0-9-]+\.local/i);
         if (mdnsMatch) {
           mdns.add(mdnsMatch[0]);
@@ -277,6 +314,8 @@ export async function getWebRTCInfo(): Promise<WebRTCInfo> {
           const ip = ipMatch[0];
           if (isPrivateIP(ip)) {
             localIPs.add(ip);
+          } else if (isCgnatIP(ip)) {
+            cgnatIPs.add(ip);
           } else {
             publicIPs.add(ip);
           }
@@ -333,36 +372,54 @@ export function detectFonts(): string[] {
 }
 
 // Detect ad blocker
-export async function detectAdBlocker(): Promise<boolean> {
+export async function detectAdBlocker(signal?: AbortSignal): Promise<boolean> {
+  if (signal?.aborted) return false;
+  const bait = document.createElement('div');
+  bait.className = 'adsbox ad-banner ad-placeholder pub_300x250 pub_300x250m pub_728x90 text-ad textAd text_ad text_ads text-ads text-ad-links';
+  bait.style.cssText = 'position: absolute; top: -10px; left: -10px; width: 1px; height: 1px;';
+
   try {
-    // Create a bait element
-    const bait = document.createElement('div');
-    bait.className = 'adsbox ad-banner ad-placeholder pub_300x250 pub_300x250m pub_728x90 text-ad textAd text_ad text_ads text-ads text-ad-links';
-    bait.style.cssText = 'position: absolute; top: -10px; left: -10px; width: 1px; height: 1px;';
     document.body.appendChild(bait);
+    await new Promise<void>((resolve, reject) => {
+      const onAbort = () => {
+        clearTimeout(timer);
+        reject(new DOMException('Aborted', 'AbortError'));
+      };
+      const timer = setTimeout(() => {
+        signal?.removeEventListener('abort', onAbort);
+        resolve();
+      }, 100);
+      if (signal?.aborted) {
+        onAbort();
+        return;
+      }
+      signal?.addEventListener('abort', onAbort, { once: true });
+    });
 
-    // Wait a bit for ad blockers to act
-    await new Promise(resolve => setTimeout(resolve, 100));
+    const baitBlocked =
+      bait.offsetHeight === 0 ||
+      bait.offsetParent === null ||
+      getComputedStyle(bait).display === 'none';
 
-    const blocked = bait.offsetHeight === 0 || 
-                    bait.offsetParent === null || 
-                    getComputedStyle(bait).display === 'none';
+    // Bait already caught it — skip the extra request to Google.
+    if (baitBlocked) return true;
 
-    document.body.removeChild(bait);
-
-    // Try to fetch a known ad script
     try {
       await fetch('https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js', {
         method: 'HEAD',
         mode: 'no-cors',
+        signal,
       });
     } catch {
+      if (signal?.aborted) return false;
       return true;
     }
 
-    return blocked;
+    return false;
   } catch {
     return false;
+  } finally {
+    bait.remove();
   }
 }
 
@@ -400,6 +457,7 @@ export function getScreenInfo() {
     pixelRatio: window.devicePixelRatio,
   };
 }
+export type ScreenInfo = ReturnType<typeof getScreenInfo>;
 
 // Get timezone and language
 export function getLocaleInfo() {
@@ -410,6 +468,7 @@ export function getLocaleInfo() {
     platform: navigator.platform,
   };
 }
+export type LocaleInfo = ReturnType<typeof getLocaleInfo>;
 
 // Get user agent
 export function getUserAgent(): string {
@@ -469,6 +528,7 @@ export function getHardwareInfo() {
     deviceMemory: nav.deviceMemory ?? null,
   };
 }
+export type HardwareInfo = ReturnType<typeof getHardwareInfo>;
 
 // Referrer (where you came from)
 export function getReferrer(): string {
@@ -643,6 +703,7 @@ export function getSystemPreferences() {
     pointerType: mq('(pointer: coarse)') ? 'Touch (coarse)' : mq('(pointer: fine)') ? 'Mouse/trackpad (fine)' : 'None detected',
   };
 }
+export type SystemPreferences = ReturnType<typeof getSystemPreferences>;
 
 // Battery Status API (Chromium only; removed from Firefox/Safari for privacy)
 export async function getBatteryInfo(): Promise<{ level: number; charging: boolean } | null> {
@@ -705,13 +766,14 @@ export interface SpeedTestResult {
 }
 
 // Test latency to a server
-async function testLatency(url: string): Promise<number | null> {
+async function testLatency(url: string, signal?: AbortSignal): Promise<number | null> {
   try {
     const start = performance.now();
-    await fetch(url, { 
-      method: 'HEAD', 
+    await fetch(url, {
+      method: 'HEAD',
       mode: 'no-cors',
       cache: 'no-store',
+      signal,
     });
     const end = performance.now();
     return Math.round(end - start);
@@ -722,7 +784,8 @@ async function testLatency(url: string): Promise<number | null> {
 
 // Run speed tests to multiple servers
 export async function runSpeedTests(
-  onUpdate: (results: SpeedTestResult[]) => void
+  onUpdate: (results: SpeedTestResult[]) => void,
+  signal?: AbortSignal,
 ): Promise<SpeedTestResult[]> {
   const servers = [
     { url: 'https://www.google.com/favicon.ico', server: 'Google', location: 'Global CDN' },
@@ -739,20 +802,24 @@ export async function runSpeedTests(
     status: 'pending' as const,
   }));
 
+  if (signal?.aborted) return results;
   onUpdate([...results]);
 
   // Test each server sequentially for more accurate results
   for (let i = 0; i < servers.length; i++) {
+    if (signal?.aborted) return results;
     results[i].status = 'testing';
     onUpdate([...results]);
 
     // Warm-up request so DNS resolution and TLS handshake don't inflate
     // the first measurement, then run 3 tests and take the median.
-    await testLatency(servers[i].url + '?warmup=' + Date.now());
+    await testLatency(servers[i].url + '?warmup=' + Date.now(), signal);
+    if (signal?.aborted) return results;
 
     const latencies: number[] = [];
     for (let j = 0; j < 3; j++) {
-      const latency = await testLatency(servers[i].url + '?t=' + Date.now());
+      if (signal?.aborted) return results;
+      const latency = await testLatency(servers[i].url + '?t=' + Date.now(), signal);
       if (latency !== null) {
         latencies.push(latency);
       }
