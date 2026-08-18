@@ -700,7 +700,7 @@ export function getSystemPreferences() {
     highContrast: mq('(prefers-contrast: more)'),
     touchSupport: navigator.maxTouchPoints > 0,
     maxTouchPoints: navigator.maxTouchPoints,
-    pointerType: mq('(pointer: coarse)') ? 'Touch (coarse)' : mq('(pointer: fine)') ? 'Mouse/trackpad (fine)' : 'None detected',
+    pointerType: mq('(pointer: coarse)') ? 'Touch' : mq('(pointer: fine)') ? 'Mouse or trackpad' : 'None detected',
   };
 }
 export type SystemPreferences = ReturnType<typeof getSystemPreferences>;
@@ -717,9 +717,8 @@ export async function getBatteryInfo(): Promise<{ level: number; charging: boole
   }
 }
 
-// Fingerprint persistence demo. This is the ONE thing the app stores, and it
-// stays in the user's own localStorage. It demonstrates that a fingerprint
-// recognizes you across visits with no cookies involved.
+// Fingerprint persistence demo. Saved in the user's own localStorage along
+// with theme preference. It demonstrates that a nickname can survive cookies.
 const FP_HISTORY_KEY = 'wdtk-fingerprint-history';
 
 export interface FingerprintHistory {
