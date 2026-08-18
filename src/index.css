@@ -618,7 +618,7 @@ body {
   text-underline-offset: 0.2em;
 }
 
-/* FAQ — query-matching Q&A; details keeps answers in the HTML for crawlers */
+/* FAQ — visible Q&A; details keeps answers in the HTML for crawlers */
 .faq {
   max-width: 760px;
   margin: 2.5rem auto 1rem;
@@ -626,14 +626,7 @@ body {
 
 .faq h2 {
   font-size: 1.5rem;
-  margin-bottom: 0.5rem;
-}
-
-.faq-lede {
-  color: var(--text-secondary);
-  font-size: 0.9375rem;
   margin-bottom: 1rem;
-  line-height: 1.7;
 }
 
 .faq-list {
@@ -646,19 +639,54 @@ body {
   background: var(--bg-card);
   border: 1px solid var(--border-color);
   border-radius: 0.5rem;
-  padding: 0.75rem 1rem;
+  padding: 0.875rem 1rem;
 }
 
 .faq summary {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
   font-weight: 600;
+  line-height: 1.45;
   cursor: pointer;
-  list-style-position: outside;
+  list-style: none;
+  hyphens: none;
+}
+
+.faq summary::-webkit-details-marker,
+.faq summary::marker {
+  display: none;
+  content: none;
+}
+
+.faq summary::before {
+  content: '';
+  flex-shrink: 0;
+  width: 0.4rem;
+  height: 0.4rem;
+  margin-top: 0.4em;
+  border-right: 2px solid var(--text-muted);
+  border-bottom: 2px solid var(--text-muted);
+  transform: rotate(-45deg);
+}
+
+.faq details[open] > summary::before {
+  margin-top: 0.3em;
+  transform: rotate(45deg);
+}
+
+.faq summary span {
+  min-width: 0;
+  flex: 1;
+  overflow-wrap: break-word;
 }
 
 .faq details p {
   color: var(--text-secondary);
   font-size: 0.9375rem;
-  margin-top: 0.75rem;
+  margin: 0.75rem 0 0 1.15rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border-color);
   line-height: 1.7;
 }
 

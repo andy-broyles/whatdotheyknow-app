@@ -554,22 +554,19 @@ function App() {
           </section>
 
           <section className="faq" aria-labelledby="faq-heading">
-            <h2 id="faq-heading">What information does my browser reveal?</h2>
-            <p className="faq-lede">
-              These are the questions people type into Google. The short answers match the live report above.
-            </p>
+            <h2 id="faq-heading">Common questions</h2>
             <div className="faq-list">
-              <details open>
-                <summary>What does the internet know about me?</summary>
+              <details>
+                <summary><span>What does the internet know about me?</span></summary>
                 <p>
                   Any website you visit can read your IP address and approximate location, plus a browser fingerprint
                   built from your screen, fonts, GPU, audio stack, language, timezone, and other properties your browser
                   exposes with no permission prompt. This page runs those same checks in your browser and shows the
-                  result. Nothing is stored or logged here.
+                  result. The report stays on your screen; this site does not keep a copy.
                 </p>
               </details>
               <details>
-                <summary>What information does my browser reveal to websites?</summary>
+                <summary><span>What information does my browser reveal to websites?</span></summary>
                 <p>
                   Your browser reveals IP and ISP, a stable fingerprint hash, canvas and audio rendering hashes, WebGL
                   GPU model, installed fonts, CPU cores and RAM, screen size, timezone, language, client hints (exact OS
@@ -577,7 +574,7 @@ function App() {
                 </p>
               </details>
               <details>
-                <summary>What does every website know about you?</summary>
+                <summary><span>What does every website know about you?</span></summary>
                 <p>
                   Every site can see the same first-party signals: who your ISP is, rough location, device class, and
                   enough fingerprint bits to recognize a return visit without cookies. They cannot see your name, email,
@@ -586,7 +583,7 @@ function App() {
                 </p>
               </details>
               <details>
-                <summary>How much does the internet know about me?</summary>
+                <summary><span>How much does the internet know about me?</span></summary>
                 <p>
                   This tool counts which tracking surfaces work in your browser (IP, fingerprint, canvas, audio, GPU,
                   fonts, hardware, client hints, WebRTC, opt-out signals). That is a count of techniques, not a uniqueness
@@ -595,7 +592,7 @@ function App() {
                 </p>
               </details>
               <details>
-                <summary>Can I stop websites from fingerprinting me?</summary>
+                <summary><span>Can I stop websites from fingerprinting me?</span></summary>
                 <p>
                   Two strategies work: blend in (Tor Browser makes users look alike) or add noise (Brave farbling
                   randomizes canvas, audio, and WebGL per site). uBlock Origin and Firefox tracking protection cut off
