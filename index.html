@@ -1,10 +1,16 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#0f172a" media="(prefers-color-scheme: dark)" />
-    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#000000" />
+    <script>
+      try {
+        if (localStorage.getItem('wdtk-theme') === 'light') {
+          document.documentElement.setAttribute('data-theme', 'light');
+        }
+      } catch (e) {}
+    </script>
 
     <!-- Primary Meta Tags (SEO) - per Google SEO Starter Guide -->
     <title>What Does the Internet Know About Me? Free Browser Check</title>
@@ -103,18 +109,17 @@
     }
     </script>
 
-    <!-- Critical CSS inline to avoid blocking LCP (fonts removed; use system stack) -->
     <style>
-      :root{--bg-p:#fff;--bg-s:#f8fafc;--text-p:#0f172a;--text-s:#334155;--border:#e2e8f0;--accent:#4f46e5}
-      [data-theme=dark]{--bg-p:#0f172a;--bg-s:#1e293b;--text-p:#f1f5f9;--text-s:#cbd5e1;--border:#334155}
+      :root{--bg-p:#000;--bg-s:#111;--text-p:#fff;--text-s:#d4d4d4;--border:rgba(255,255,255,.12);--accent:#818cf8}
+      [data-theme=light]{--bg-p:#fff;--bg-s:#f4f4f4;--text-p:#000;--text-s:#262626;--border:rgba(0,0,0,.12);--accent:#4f46e5}
       *{margin:0;padding:0;box-sizing:border-box}
       body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg-p);color:var(--text-p);line-height:1.6;min-height:100vh}
       #root{min-height:100vh;display:flex;flex-direction:column}
       .container{max-width:1200px;margin:0 auto;padding:0 1rem;width:100%}
       .header{background:var(--bg-p);border-bottom:1px solid var(--border);padding:1rem 0;position:sticky;top:0;z-index:100}
       .header-content,.hero{display:flex}.header-content{justify-content:space-between;align-items:center;gap:1rem}
-      .hero{flex-direction:column;text-align:center;padding:3rem 0 2rem;background:linear-gradient(180deg,var(--bg-s) 0%,var(--bg-p) 100%)}
-      .hero h1{font-size:clamp(1.75rem,5vw,2.5rem);font-weight:700;margin-bottom:1rem}
+      .hero{flex-direction:column;text-align:center;padding:3rem 0 2rem;background:radial-gradient(ellipse 70% 55% at 50% -20%,rgba(99,102,241,.22),transparent 60%),var(--bg-p)}
+      .hero h1{font-size:clamp(1.75rem,5vw,2.75rem);font-weight:800;letter-spacing:-.03em;margin-bottom:1rem;color:var(--text-p)}
       .hero p{color:var(--text-s);font-size:1.125rem;max-width:600px;margin:0 auto 1.5rem}
       .loading{display:flex;align-items:center;gap:.5rem;color:var(--text-s)}
       .spinner{width:16px;height:16px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite}

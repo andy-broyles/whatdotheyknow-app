@@ -59,15 +59,15 @@ function computeExposure(data: PrivacyData): { signals: ExposureSignal[]; expose
 
 function App() {
   const [darkMode, setDarkMode] = useState(() => {
-    if (typeof window === 'undefined') return false;
+    if (typeof window === 'undefined') return true;
     try {
       const stored = localStorage.getItem('wdtk-theme');
-      if (stored === 'dark') return true;
       if (stored === 'light') return false;
+      if (stored === 'dark') return true;
     } catch {
       // storage blocked
     }
-    return window.matchMedia('(prefers-color-scheme: dark)').matches;
+    return true;
   });
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<PrivacyData | null>(null);
@@ -166,6 +166,8 @@ function App() {
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', darkMode ? 'dark' : 'light');
+    const themeMeta = document.querySelector('meta[name="theme-color"]');
+    if (themeMeta) themeMeta.setAttribute('content', darkMode ? '#000000' : '#ffffff');
     try {
       localStorage.setItem('wdtk-theme', darkMode ? 'dark' : 'light');
     } catch {
@@ -477,13 +479,13 @@ function App() {
       <section className="hero">
         <div className="container">
           <h1>What does the internet know about you?</h1>
-          <p>A live check of what a website can learn from one visit: roughly where you are, what device you’re on, and a nickname that can follow you around. We don’t keep your report.</p>
+          <p>A live check of what a website can learn from one visit: roughly where you are, what device you’re on, and a nickname that can follow you around.</p>
           <div className="privacy-badge">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
               <path d="M9 12l2 2 4-4"/>
             </svg>
-            No account, no database. Your report stays on this screen.
+            These checks run in your browser. Nothing is tracked or stored.
           </div>
         </div>
       </section>
