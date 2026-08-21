@@ -36,12 +36,15 @@ export interface PrivacyData {
   gpc: string;
   storageEstimate: { quota: number; usage: number; usagePercent: string } | null;
   audioFingerprint: string;
-  mediaDevices: { audioinput: number; audiooutput: number; videoinput: number } | null;
+  mediaDevices: { audioinput: number; audiooutput: number; videoinput: number; labelsVisible: boolean } | null;
   permissions: PermissionState_[];
   clientHints: ClientHintsInfo;
   preferences: SystemPreferences;
   battery: { level: number; charging: boolean } | null;
   fpHistory: FingerprintHistory;
+  webdriver: boolean;
+  pdfViewerEnabled: boolean | null;
+  speechVoices: { count: number; names: string[] } | null;
 }
 
 const PERMISSION_LABELS: Record<string, string> = {
@@ -79,7 +82,7 @@ export function SignalsGrid({
         iconTone="blue"
         title="Where you are (from your IP)"
         info="We ask a location service (ipapi.co, then freeipapi.com, then ipwho.is) for your internet address and city. Your browser makes the request; those companies see your IP the way any website does. If all three time out or are blocked, we show nothing."
-        explanation="Your internet address (IP) is like a return address for every site you visit. It usually shows your city and who provides your internet. If you use a VPN, sites often still notice: VPN and datacenter addresses are publicly listed."
+        explanation="Your internet address (IP) is like a return address for every site you visit. It usually shows your city and who provides your internet. Sites can often tell a VPN or proxy from a home connection. A datacenter address is not the same as a VPN, so we only flag VPN or proxy when the lookup service actually reports that."
         tip={<>A reputable VPN or the Tor Browser changes the address sites see. Check the “VPN/proxy visible” row: sites can usually tell you’re on a VPN even though they can’t see through it.</>}
         loading={loading}
       >
@@ -163,7 +166,7 @@ export function SignalsGrid({
         icon={<Icon><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><path d="M8 21h8M12 17v4"/></Icon>}
         iconTone="blue"
         title="Browser and computer name (user agent)"
-        info="Read from navigator.userAgent. Your browser sends this text with every request, like a name tag."
+        info="Read from navigator.userAgent. Your browser sends this text with every request, like a name tag. We also read navigator.webdriver (automated browser) and navigator.pdfViewerEnabled when the browser reports them."
         explanation="This string tells websites which browser, version, and operating system you use. Sites need it to work correctly; trackers also use it as one more clue."
         tip={<>You can’t usefully hide this. Pretending to be a different browser breaks sites and makes you <em>more</em> unusual. Using a common browser keeps you in a bigger crowd.</>}
         loading={loading}
@@ -174,8 +177,16 @@ export function SignalsGrid({
             <span className="card-detail-value">{data?.parsedUA.browser}</span>
           </div>
           <div className="card-detail">
-                <span className="card-detail-label">Computer</span>
+            <span className="card-detail-label">Computer</span>
             <span className="card-detail-value">{data?.parsedUA.os}</span>
+          </div>
+          <div className="card-detail">
+            <span className="card-detail-label">Built-in PDF viewer</span>
+            <span className="card-detail-value">{data?.pdfViewerEnabled == null ? 'Not reported' : data.pdfViewerEnabled ? 'On' : 'Off'}</span>
+          </div>
+          <div className="card-detail">
+            <span className="card-detail-label">Looks automated</span>
+            <span className="card-detail-value">{data?.webdriver ? 'Yes (navigator.webdriver)' : 'No'}</span>
           </div>
         </div>
         <div className="card-value mono" style={{ fontSize: '0.75rem' }}>{data?.userAgent}</div>
@@ -200,7 +211,7 @@ export function SignalsGrid({
             <span className="card-detail-value">{data?.screen.availWidth} × {data?.screen.availHeight}</span>
           </div>
           <div className="card-detail">
-            <span className="card-detail-label">Color Depth</span>
+            <span className="card-detail-label">Color depth</span>
             <span className="card-detail-value">{data?.screen.colorDepth}-bit</span>
           </div>
           <div className="card-detail">
@@ -214,8 +225,8 @@ export function SignalsGrid({
         icon={<Icon><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></Icon>}
         iconTone="yellow"
         title="Timezone and language"
-        info="From Intl.DateTimeFormat().resolvedOptions().timeZone and navigator.language / navigator.languages."
-        explanation="Your clock zone and language settings hint at where you live. The full language list is a stronger clue than the first language alone. An unusual mix is very identifying."
+        info="From Intl.DateTimeFormat().resolvedOptions().timeZone, the UTC offset of this machine’s clock, navigator.language / navigator.languages, navigator.platform, and speechSynthesis.getVoices() when the browser lists them. Platform is old and often lies (for example MacIntel on Apple silicon)."
+        explanation="Your clock zone, clock offset, and language settings hint at where you live. The full language list is a stronger clue than the first language alone. Installed spoken voices are another fingerprint. An unusual mix is very identifying."
         tip="If your IP says one country and your timezone says another, sites notice. VPN users should know this. The Tor Browser reports UTC for everyone."
         loading={loading}
       >
@@ -223,6 +234,10 @@ export function SignalsGrid({
           <div className="card-detail">
             <span className="card-detail-label">Timezone</span>
             <span className="card-detail-value">{data?.locale.timezone}</span>
+          </div>
+          <div className="card-detail">
+            <span className="card-detail-label">Clock offset</span>
+            <span className="card-detail-value">{data?.locale.utcOffset}</span>
           </div>
           <div className="card-detail">
             <span className="card-detail-label">Language</span>
@@ -236,6 +251,16 @@ export function SignalsGrid({
             <span className="card-detail-label">Computer type</span>
             <span className="card-detail-value">{data?.locale.platform}</span>
           </div>
+          {data?.speechVoices ? (
+            <div className="card-detail">
+              <span className="card-detail-label">Spoken voices</span>
+              <span className="card-detail-value">
+                {data.speechVoices.count === 0
+                  ? 'None listed yet'
+                  : `${data.speechVoices.count} (${data.speechVoices.names.join(', ')}${data.speechVoices.count > data.speechVoices.names.length ? '…' : ''})`}
+              </span>
+            </div>
+          ) : null}
         </div>
       </SignalCard>
 
@@ -257,7 +282,7 @@ export function SignalsGrid({
         icon={<Icon><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></Icon>}
         iconTone="blue"
         title="Graphics card (WebGL)"
-        info="We create a WebGL drawing context and read UNMASKED_VENDOR_WEBGL and UNMASKED_RENDERER_WEBGL — the maker and model of your graphics chip."
+        info="We create a WebGL drawing context. If the browser allows WEBGL_debug_renderer_info, we read the real maker and chip. If not, we only get a generic name like “WebKit WebGL” — that is not your actual graphics card."
         explanation="WebGL can name your graphics card and driver. That’s unusually specific and is used to recognize devices."
         tip="Firefox’s resistFingerprinting and the Tor Browser report a generic chip instead of yours. Brave randomizes WebGL the same way it does the drawing test."
         loading={loading}
@@ -272,6 +297,12 @@ export function SignalsGrid({
               <span className="card-detail-label">Chip</span>
               <span className="card-detail-value" style={{ fontSize: '0.75rem' }}>{data.webgl.renderer}</span>
             </div>
+            {!data.webgl.unmasked && (
+              <div className="card-detail">
+                <span className="card-detail-label">Real name</span>
+                <span className="card-detail-value">Hidden — this is a generic label</span>
+              </div>
+            )}
           </div>
         ) : (
           <div className="card-value">Graphics info not available</div>
@@ -281,7 +312,7 @@ export function SignalsGrid({
       <SignalCard
         icon={<Icon><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></Icon>}
         iconTone="red"
-        title="Real IP leak (video calls / WebRTC)"
+        title="Real IP leak (video calls)"
         info="We briefly start a fake video-call connection using Google’s STUN server (stun.l.google.com). The addresses that pop up (ICE candidates) can include IPs. Only a public, globally routable IP counts as a leak. Home-network IPs, .local names (mDNS), and shared-provider addresses (CGNAT, 100.64.0.0/10) are visible to scripts but do not identify you on the public internet."
         status={!loading ? (
           <span className={`card-status ${data?.webrtc.leaking ? 'status-danger' : 'status-safe'}`}>
@@ -291,7 +322,7 @@ export function SignalsGrid({
         explanation="The feature that makes video calls work (WebRTC) can reveal your real public internet address even when a VPN is on. The important check is whether that address differs from the one this page already sees. Modern browsers hide home-network IPs behind .local names. Shared-provider addresses (CGNAT) are used by many customers at once, so they are not a public leak."
         tip={<>A good VPN app also covers video-call traffic. Check this card while connected. uBlock Origin has a “prevent WebRTC IP leak” setting; Firefox can turn WebRTC off entirely via <code>media.peerconnection.enabled</code>.</>}
         loading={loading}
-        loadingLabel="Testing..."
+        loadingLabel="Testing leak..."
       >
         {data?.webrtc.leaking ? (
           <>
@@ -331,7 +362,7 @@ export function SignalsGrid({
         icon={<Icon><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></Icon>}
         iconTone="purple"
         title="Installed fonts"
-        info="We measure the width of a test sentence in about 30 common font families. If the width differs from the fallback font, that family is likely installed. This is a sample, not every font on your computer."
+        info="We measure the width of a test sentence in 27 common font families. If the width differs from the fallback font, that family is likely installed. This is a sample, not every font on your computer. Helvetica is skipped because Windows often aliases it to Arial and would falsely report it as installed."
         status={<span className="card-status status-warning">{data?.fonts.length || 0} found</span>}
         explanation="The mix of fonts on your computer can be surprisingly identifying, especially fonts that came with Adobe, Microsoft Office, or design tools."
         tip="Avoid installing system-wide fonts you don’t need. Firefox’s resistFingerprinting limits sites to a standard font list."
@@ -352,7 +383,7 @@ export function SignalsGrid({
         icon={<Icon><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="9" y1="9" x2="15" y2="15"/><line x1="15" y1="9" x2="9" y2="15"/></Icon>}
         iconTone="green"
         title="Ad blocker"
-        info="We hide an element with ad-like class names. If it disappears, we treat that as an ad blocker. If not, we try to fetch a known Google ad script. This is a guess, not a guarantee."
+        info="We hide an element with ad-like class names. If it disappears, we treat that as an ad blocker. If not, we try to fetch a known Google ad script. A failed fetch can also mean a firewall, tracker protection, or a network error — so this is a guess, not a guarantee."
         status={!loading ? (
           <span className={`card-status ${data?.adBlocker ? 'status-safe' : 'status-warning'}`}>
             {data?.adBlocker ? 'Looks like yes' : 'Looks like no'}
@@ -361,7 +392,7 @@ export function SignalsGrid({
         explanation="Sites can often tell if ads are being blocked. That’s useful for you, and it’s also one more clue they can use to recognize you."
         tip="Keep the blocker. Stopping trackers helps far more than this one clue costs. uBlock Origin is the usual recommendation."
         loading={loading}
-        loadingLabel="Testing..."
+        loadingLabel="Checking ads..."
       >
         <div className="card-value" style={{ color: data?.adBlocker ? 'var(--success)' : 'var(--warning)' }}>
           {data?.adBlocker ? 'Looks like an ad blocker is on' : 'No ad blocker spotted'}
@@ -376,7 +407,7 @@ export function SignalsGrid({
         explanation="Cookies are little files a site saves on your computer so it can remember you. Other companies’ cookies (third-party) are how advertisers follow you from site to site."
         tip="Block other companies’ cookies in your browser settings (Firefox and Safari already do; Chrome still allows them). Everyday sites still work for almost everyone."
         loading={loading}
-        loadingLabel="Checking..."
+        loadingLabel="Checking cookies..."
       >
         <div className="card-details">
           <div className="card-detail">
@@ -402,7 +433,7 @@ export function SignalsGrid({
         title="How fast distant sites answer"
         info="After a warm-up request (so first-time setup isn’t counted), we fetch a small file from each server 3 times and take the middle time. That includes the server thinking, so it’s slower than a raw ping."
         status={!loading && data?.speedTests && data.speedTests.length > 0 && data.speedTests.every(t => t.status === 'done' || t.status === 'error') ? (
-          <span className="card-status status-safe">Complete</span>
+          <span className="card-status status-safe">Done</span>
         ) : undefined}
         explanation="How long a round trip takes to big companies can hint at your connection quality and roughly where you are. It is not a raw ping."
         tip="Little to do here. Timing is part of how the internet works. A VPN changes which region you look closest to (and adds some delay)."
@@ -425,7 +456,7 @@ export function SignalsGrid({
                   <span style={{
                     color: test.latency! < 100 ? 'var(--success)' : test.latency! < 300 ? 'var(--warning)' : 'var(--danger)'
                   }}>
-                    {test.latency}ms
+                    {test.latency} ms
                   </span>
                 )}
                 {test.status === 'error' && <span style={{ color: 'var(--danger)' }}>Failed</span>}
@@ -439,8 +470,8 @@ export function SignalsGrid({
         icon={<Icon><path d="M5 12h14M12 5l7 7-7 7"/></Icon>}
         iconTone="blue"
         title="Connection type"
-        info="From the Network Information API (navigator.connection): connection class, download speed, delay, and data-saver. Not available in every browser."
-        explanation="Chrome can tell a site whether you look like you’re on 4G, Wi‑Fi, and so on, plus a rough speed. Used both to adapt pages and as another recognition clue."
+        info="From the Network Information API (navigator.connection, Chrome). These are coarse guesses, not a speed test: the download figure is often capped (commonly around 10 Mbps), and “4g” can appear even on Wi-Fi."
+        explanation="Chrome can tell a site a rough connection class and a capped speed guess. Used both to adapt pages and as another recognition clue. It is not your real bandwidth."
         tip="This exists in Chrome-based browsers only. Firefox and Safari don’t offer it, which is the privacy-friendlier choice."
         loading={loading}
       >
@@ -451,7 +482,7 @@ export function SignalsGrid({
               <span className="card-detail-value">{data.connection.effectiveType ?? 'Unknown'}</span>
             </div>
             <div className="card-detail">
-              <span className="card-detail-label">Download speed</span>
+              <span className="card-detail-label">Speed guess</span>
               <span className="card-detail-value">{data.connection.downlink != null ? data.connection.downlink + ' Mbps' : '—'}</span>
             </div>
             <div className="card-detail">
@@ -472,15 +503,15 @@ export function SignalsGrid({
         icon={<Icon><rect x="4" y="4" width="16" height="16" rx="2" ry="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/></Icon>}
         iconTone="purple"
         title="Processor and memory"
-        info="navigator.hardwareConcurrency (processor cores) and navigator.deviceMemory (approximate RAM in GB, Chrome only)."
+        info="navigator.hardwareConcurrency is logical processors (threads), not necessarily physical cores. navigator.deviceMemory is approximate RAM in GB, Chrome only, and is bucketed (0.25, 0.5, 1, 2, 4, 8)."
         status={<span className="card-status status-warning">Part of your nickname</span>}
-        explanation="Scripts can read how many processor cores you have, and in Chrome a rough RAM size. Together with other clues they help recognize a specific computer."
+        explanation="Scripts can read how many logical processors you have, and in Chrome a rough RAM size. Together with other clues they help recognize a specific computer."
         tip="Firefox’s resistFingerprinting caps the reported core count; RAM size is Chrome-only. Common hardware (4–8 cores) blends in better than unusual specs."
         loading={loading}
       >
         <div className="card-details">
           <div className="card-detail">
-            <span className="card-detail-label">Processor cores</span>
+            <span className="card-detail-label">Logical processors</span>
             <span className="card-detail-value">{data?.hardware.hardwareConcurrency ?? 'Unknown'}</span>
           </div>
           <div className="card-detail">
@@ -579,8 +610,8 @@ export function SignalsGrid({
         icon={<Icon><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></Icon>}
         iconTone="red"
         title="Cameras, mics, and permissions"
-        info="navigator.mediaDevices.enumerateDevices(): a site can count cameras, mics, and speakers without asking (names stay hidden until you say yes). navigator.permissions.query() shows what you’ve already allowed."
-        explanation={'Any site can count your cameras, mics, and speakers without asking, and check which permissions you’ve already granted. “Granted” means the site can use that again next time without a prompt.'}
+        info="navigator.mediaDevices.enumerateDevices() can list cameras, mics, and speakers. Names stay hidden until you allow access. Chrome often still reveals the count; Firefox and Safari may report incomplete counts until permission. navigator.permissions.query() shows what you’ve already allowed."
+        explanation={'Chrome can often count cameras, mics, and speakers without asking. Names stay hidden until you allow access, and other browsers may hide the counts too. “Granted” means the site can use that again next time without a prompt.'}
         tip={'Check granted permissions in your browser’s site settings and turn off ones you no longer need. “Granted” means no prompt next time.'}
         loading={loading}
         loadingLabel="Counting devices..."
@@ -600,6 +631,12 @@ export function SignalsGrid({
                 <span className="card-detail-label">Speakers</span>
                 <span className="card-detail-value">{data.mediaDevices.audiooutput}</span>
               </div>
+              {!data.mediaDevices.labelsVisible && (
+                <div className="card-detail">
+                  <span className="card-detail-label">Names</span>
+                  <span className="card-detail-value">Hidden — counts may be incomplete</span>
+                </div>
+              )}
             </>
           ) : (
             <div className="card-detail">
@@ -622,7 +659,7 @@ export function SignalsGrid({
         icon={<Icon><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></Icon>}
         iconTone="yellow"
         title="Dark mode and accessibility"
-        info="Read via CSS media queries (matchMedia) and navigator.maxTouchPoints: dark/light mode, reduced motion, contrast, touch support, pointer type. Each is one more recognition clue."
+        info="Read via CSS media queries (matchMedia) and navigator.maxTouchPoints: dark/light mode, reduced motion, contrast, inverted or forced colors, color gamut, touch support, pointer type. Each is one more recognition clue."
         explanation="Even your dark-mode choice is visible to every website via CSS. Accessibility settings like reduced motion are especially identifying because fewer people turn them on."
         tip="These leak through CSS itself, so they’re hard to hide without breaking theming. The Tor Browser reports the defaults for everyone."
         loading={loading}
@@ -639,6 +676,18 @@ export function SignalsGrid({
           <div className="card-detail">
             <span className="card-detail-label">High contrast</span>
             <span className="card-detail-value">{data?.preferences.highContrast ? 'On' : 'Off'}</span>
+          </div>
+          <div className="card-detail">
+            <span className="card-detail-label">Color range</span>
+            <span className="card-detail-value">{data?.preferences.colorGamut}</span>
+          </div>
+          <div className="card-detail">
+            <span className="card-detail-label">Forced colors</span>
+            <span className="card-detail-value">{data?.preferences.forcedColors ? 'On' : 'Off'}</span>
+          </div>
+          <div className="card-detail">
+            <span className="card-detail-label">Inverted colors</span>
+            <span className="card-detail-value">{data?.preferences.invertedColors ? 'On' : 'Off'}</span>
           </div>
           <div className="card-detail">
             <span className="card-detail-label">Touch</span>

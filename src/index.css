@@ -44,10 +44,11 @@
 
 /* Section heading (SEO: clear hierarchy h1 → h2 → h3) */
 .section-heading {
-  font-size: 1.25rem;
-  font-weight: 600;
-  color: var(--text-secondary);
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--text-primary);
   margin-bottom: 1.5rem;
+  letter-spacing: -0.02em;
 }
 
 * {
@@ -285,6 +286,7 @@ body {
 .card-title h3 {
   font-size: 1rem;
   font-weight: 600;
+  line-height: 1.35;
 }
 
 /* Info icon + "How is this calculated?" tooltip */
@@ -353,6 +355,8 @@ body {
   border-radius: 1rem;
   font-size: 0.75rem;
   font-weight: 500;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .status-safe { background: color-mix(in srgb, var(--success) 16%, transparent); color: var(--success); }
@@ -547,7 +551,9 @@ body {
 }
 
 .summary-headline h2 {
-  font-size: 1.25rem;
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
   margin-bottom: 0.25rem;
 }
 
@@ -610,6 +616,8 @@ body {
 
 .explainer h2 {
   font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
   margin-bottom: 1rem;
 }
 
@@ -629,11 +637,13 @@ body {
 /* FAQ — visible Q&A; details keeps answers in the HTML for crawlers */
 .faq {
   max-width: 760px;
-  margin: 2.5rem auto 1rem;
+  margin: 3rem auto 1rem;
 }
 
 .faq h2 {
   font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
   margin-bottom: 1rem;
 }
 

@@ -10,7 +10,8 @@ export interface IPInfo {
   timezone: string;
   latitude: number;
   longitude: number;
-  // true/false when the API reports proxy/VPN/hosting status; null = API doesn't say
+  // true/false when the API reports VPN or proxy; null = API doesn't say.
+  // Datacenter/hosting alone is not treated as a VPN.
   vpnOrProxy: boolean | null;
   source: string;
 }
@@ -30,6 +31,8 @@ export interface WebGLInfo {
   vendor: string;
   renderer: string;
   available: boolean;
+  /** True only when WEBGL_debug_renderer_info gave an unmasked name. */
+  unmasked: boolean;
 }
 
 const IP_LOOKUP_TIMEOUT_MS = 3000;
@@ -75,7 +78,7 @@ export async function getIPInfo(signal?: AbortSignal): Promise<IPInfo | null> {
         const conn = data.connection as Record<string, unknown> | undefined;
         let vpnOrProxy: boolean | null = null;
         if (security && (typeof security.vpn === 'boolean' || typeof security.proxy === 'boolean')) {
-          vpnOrProxy = security.vpn === true || security.proxy === true || security.hosting === true;
+          vpnOrProxy = security.vpn === true || security.proxy === true;
         }
         return {
           ip: (data.ip as string) || 'Unknown',
@@ -181,7 +184,7 @@ export function getWebGLInfo(): WebGLInfo {
     const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
     
     if (!gl) {
-      return { vendor: 'Not available', renderer: 'Not available', available: false };
+      return { vendor: 'Not available', renderer: 'Not available', available: false, unmasked: false };
     }
 
     const debugInfo = (gl as WebGLRenderingContext).getExtension('WEBGL_debug_renderer_info');
@@ -191,6 +194,7 @@ export function getWebGLInfo(): WebGLInfo {
         vendor: (gl as WebGLRenderingContext).getParameter(debugInfo.UNMASKED_VENDOR_WEBGL) || 'Unknown',
         renderer: (gl as WebGLRenderingContext).getParameter(debugInfo.UNMASKED_RENDERER_WEBGL) || 'Unknown',
         available: true,
+        unmasked: true,
       };
     }
 
@@ -198,24 +202,26 @@ export function getWebGLInfo(): WebGLInfo {
       vendor: (gl as WebGLRenderingContext).getParameter((gl as WebGLRenderingContext).VENDOR) || 'Unknown',
       renderer: (gl as WebGLRenderingContext).getParameter((gl as WebGLRenderingContext).RENDERER) || 'Unknown',
       available: true,
+      unmasked: false,
     };
   } catch {
-    return { vendor: 'Not available', renderer: 'Not available', available: false };
+    return { vendor: 'Not available', renderer: 'Not available', available: false, unmasked: false };
   }
 }
 
 // RFC 1918 / link-local / loopback IPv4 and private/link-local/loopback IPv6
 function isPrivateIP(ip: string): boolean {
   if (ip.includes(':')) {
-    const v6 = ip.toLowerCase();
+    const v6 = ip.toLowerCase().split('%')[0];
     return (
       v6 === '::1' ||
-      v6.startsWith('fe80:') || // link-local
-      v6.startsWith('fc') || v6.startsWith('fd') // unique local fc00::/7
+      v6.startsWith('fe80:') ||
+      v6.startsWith('fc') ||
+      v6.startsWith('fd')
     );
   }
   const parts = ip.split('.').map(Number);
-  if (parts.length !== 4) return false;
+  if (parts.length !== 4 || parts.some(n => Number.isNaN(n) || n < 0 || n > 255)) return false;
   const [a, b] = parts;
   return (
     a === 10 ||
@@ -235,6 +241,14 @@ function isCgnatIP(ip: string): boolean {
   if (parts.length !== 4) return false;
   const [a, b] = parts;
   return a === 100 && b >= 64 && b <= 127;
+}
+
+function iceAddress(candidate: RTCIceCandidate): string | null {
+  const ext = candidate as RTCIceCandidate & { address?: string | null };
+  if (ext.address) return ext.address;
+  // candidate:foundation component protocol priority address port typ ...
+  const parts = candidate.candidate.split(' ');
+  return parts.length >= 5 ? parts[4] : null;
 }
 
 // Detect WebRTC leaks
@@ -300,25 +314,20 @@ export async function getWebRTCInfo(signal?: AbortSignal): Promise<WebRTCInfo> {
           return;
         }
 
-        const candidate = event.candidate.candidate;
-        const mdnsMatch = candidate.match(/[a-f0-9-]+\.local/i);
-        if (mdnsMatch) {
-          mdns.add(mdnsMatch[0]);
+        const ip = iceAddress(event.candidate);
+        if (!ip) return;
+
+        if (/\.local$/i.test(ip) || ip.includes('.local')) {
+          mdns.add(ip);
           return;
         }
 
-        const ipMatch = candidate.match(
-          /((\d{1,3}\.){3}\d{1,3})|(([0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4})/
-        );
-        if (ipMatch) {
-          const ip = ipMatch[0];
-          if (isPrivateIP(ip)) {
-            localIPs.add(ip);
-          } else if (isCgnatIP(ip)) {
-            cgnatIPs.add(ip);
-          } else {
-            publicIPs.add(ip);
-          }
+        if (isPrivateIP(ip)) {
+          localIPs.add(ip);
+        } else if (isCgnatIP(ip)) {
+          cgnatIPs.add(ip);
+        } else {
+          publicIPs.add(ip);
         }
       };
     });
@@ -327,7 +336,9 @@ export async function getWebRTCInfo(signal?: AbortSignal): Promise<WebRTCInfo> {
   }
 }
 
-// Detect installed fonts (basic detection)
+// Detect installed fonts (basic detection).
+// Helvetica / Helvetica Neue are omitted: Windows commonly aliases them to Arial,
+// which would report Helvetica as installed when it is not.
 export function detectFonts(): string[] {
   const baseFonts = ['monospace', 'sans-serif', 'serif'];
   const testFonts = [
@@ -335,7 +346,7 @@ export function detectFonts(): string[] {
     'Impact', 'Lucida Console', 'Lucida Sans Unicode', 'Palatino Linotype',
     'Tahoma', 'Times New Roman', 'Trebuchet MS', 'Verdana', 'MS Gothic',
     'MS PGothic', 'MS UI Gothic', 'Meiryo', 'Yu Gothic', 'Segoe UI',
-    'Roboto', 'Open Sans', 'Helvetica', 'Helvetica Neue', 'Monaco',
+    'Roboto', 'Open Sans', 'Monaco',
     'Consolas', 'Menlo', 'Ubuntu', 'Cantarell', 'Fira Sans',
   ];
 
@@ -461,8 +472,14 @@ export type ScreenInfo = ReturnType<typeof getScreenInfo>;
 
 // Get timezone and language
 export function getLocaleInfo() {
+  const offsetMin = -new Date().getTimezoneOffset();
+  const sign = offsetMin >= 0 ? '+' : '-';
+  const abs = Math.abs(offsetMin);
+  const hh = String(Math.floor(abs / 60)).padStart(2, '0');
+  const mm = String(abs % 60).padStart(2, '0');
   return {
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    utcOffset: `UTC${sign}${hh}:${mm}`,
     language: navigator.language,
     languages: navigator.languages ? [...navigator.languages] : [navigator.language],
     platform: navigator.platform,
@@ -538,9 +555,10 @@ export function getReferrer(): string {
 
 // Do Not Track (largely obsolete — Firefox removed it; most sites ignore it)
 export function getDoNotTrack(): string {
-  const dnt = navigator.doNotTrack ?? (navigator as Navigator & { msDoNotTrack?: string }).msDoNotTrack;
-  if (dnt === '1') return 'Yes';
-  if (dnt === '0') return 'No';
+  const nav = navigator as Navigator & { msDoNotTrack?: string };
+  const dnt = navigator.doNotTrack ?? nav.msDoNotTrack ?? (window as Window & { doNotTrack?: string }).doNotTrack;
+  if (dnt === '1' || dnt === 'yes') return 'Yes';
+  if (dnt === '0' || dnt === 'no') return 'No';
   return 'Not set';
 }
 
@@ -605,18 +623,48 @@ export async function getAudioFingerprint(): Promise<string> {
 
 // Media device counts — enumerable WITHOUT any permission prompt
 // (labels stay hidden until permission is granted, but counts leak)
-export async function getMediaDeviceCounts(): Promise<{ audioinput: number; audiooutput: number; videoinput: number } | null> {
+export async function getMediaDeviceCounts(): Promise<{ audioinput: number; audiooutput: number; videoinput: number; labelsVisible: boolean } | null> {
   try {
     if (!navigator.mediaDevices?.enumerateDevices) return null;
     const devices = await navigator.mediaDevices.enumerateDevices();
     const counts = { audioinput: 0, audiooutput: 0, videoinput: 0 };
+    let labelsVisible = false;
     for (const d of devices) {
       if (d.kind in counts) counts[d.kind as keyof typeof counts]++;
+      if (d.label) labelsVisible = true;
     }
-    return counts;
+    return { ...counts, labelsVisible };
   } catch {
     return null;
   }
+}
+
+export function getWebdriver(): boolean {
+  return navigator.webdriver === true;
+}
+
+export function getPdfViewerEnabled(): boolean | null {
+  return typeof navigator.pdfViewerEnabled === 'boolean' ? navigator.pdfViewerEnabled : null;
+}
+
+export async function getSpeechVoices(): Promise<{ count: number; names: string[] } | null> {
+  if (!('speechSynthesis' in window)) return null;
+  const read = () => window.speechSynthesis.getVoices().map(v => v.name).filter(Boolean);
+  let names = read();
+  if (names.length === 0) {
+    names = await new Promise<string[]>((resolve) => {
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        window.speechSynthesis.removeEventListener('voiceschanged', finish);
+        resolve(read());
+      };
+      window.speechSynthesis.addEventListener('voiceschanged', finish);
+      setTimeout(finish, 800);
+    });
+  }
+  return { count: names.length, names: names.slice(0, 8) };
 }
 
 // Permission states — what you've already granted, silently re-usable by sites
@@ -698,6 +746,9 @@ export function getSystemPreferences() {
     colorScheme: mq('(prefers-color-scheme: dark)') ? 'Dark' : 'Light',
     reducedMotion: mq('(prefers-reduced-motion: reduce)'),
     highContrast: mq('(prefers-contrast: more)'),
+    invertedColors: mq('(inverted-colors: inverted)'),
+    forcedColors: mq('(forced-colors: active)'),
+    colorGamut: mq('(color-gamut: p3)') ? 'P3' : mq('(color-gamut: srgb)') ? 'sRGB' : 'Not reported',
     touchSupport: navigator.maxTouchPoints > 0,
     maxTouchPoints: navigator.maxTouchPoints,
     pointerType: mq('(pointer: coarse)') ? 'Touch' : mq('(pointer: fine)') ? 'Mouse or trackpad' : 'None detected',
@@ -789,7 +840,7 @@ export async function runSpeedTests(
   const servers = [
     { url: 'https://www.google.com/favicon.ico', server: 'Google', location: 'Global CDN' },
     { url: 'https://www.cloudflare.com/favicon.ico', server: 'Cloudflare', location: 'Global CDN' },
-    { url: 'https://aws.amazon.com/favicon.ico', server: 'Amazon AWS', location: 'US East' },
+    { url: 'https://aws.amazon.com/favicon.ico', server: 'Amazon AWS', location: 'Global' },
     { url: 'https://azure.microsoft.com/favicon.ico', server: 'Microsoft Azure', location: 'Global' },
     { url: 'https://github.com/favicon.ico', server: 'GitHub', location: 'Global CDN' },
   ];

@@ -28,6 +28,9 @@ import {
   getBatteryInfo,
   checkFingerprintHistory,
   clearFingerprintHistory,
+  getWebdriver,
+  getPdfViewerEnabled,
+  getSpeechVoices,
 } from './utils/privacy';
 
 interface ExposureSignal {
@@ -45,7 +48,7 @@ function computeExposure(data: PrivacyData): { signals: ExposureSignal[]; expose
     { label: 'Reusable device nickname', exposed: data.fingerprint !== 'Unable to generate', detail: data.fpHistory.matches === true ? 'Matched your previous visit' : 'Generated this visit' },
     { label: 'Hidden drawing test works', exposed: data.canvasFingerprint !== 'Not available', detail: 'Sites can read a drawing ID' },
     { label: 'Silent sound test works', exposed: data.audioFingerprint !== 'Not available', detail: 'Sites can read a sound ID' },
-    { label: 'Graphics card name visible', exposed: data.webgl.available && !/swiftshader|llvmpipe|mesa/i.test(data.webgl.renderer), detail: data.webgl.available ? 'Chip name is readable' : 'Graphics info unavailable' },
+    { label: 'Graphics card name visible', exposed: data.webgl.unmasked && !/swiftshader|llvmpipe|mesa|basic render/i.test(data.webgl.renderer), detail: data.webgl.unmasked ? 'Chip name is readable' : data.webgl.available ? 'Generic name only' : 'Graphics info unavailable' },
     { label: 'Real IP leaks through calls', exposed: data.webrtc.leaking, detail: data.webrtc.leaking ? 'Real internet address leaked' : 'No public address leaked' },
     { label: 'Fonts can be listed', exposed: data.fonts.length > 5, detail: `${data.fonts.length} fonts detected` },
     { label: 'Memory size is readable', exposed: data.hardware.deviceMemory != null, detail: data.hardware.deviceMemory != null ? 'CPU cores + RAM readable' : 'RAM hidden (cores still visible)' },
@@ -87,7 +90,7 @@ function App() {
     const ua = getUserAgent();
 
     // Collect all data in parallel where possible
-    const [ipInfo, fingerprint, webrtc, adBlocker, audioFingerprint, mediaDevices, permissions, clientHints, battery] = await Promise.all([
+    const [ipInfo, fingerprint, webrtc, adBlocker, audioFingerprint, mediaDevices, permissions, clientHints, battery, speechVoices] = await Promise.all([
       getIPInfo(ac.signal),
       getBrowserFingerprint(),
       getWebRTCInfo(ac.signal),
@@ -97,6 +100,7 @@ function App() {
       getPermissionStates(),
       getClientHints(),
       getBatteryInfo(),
+      getSpeechVoices(),
     ]);
 
     if (gen !== collectGen.current || ac.signal.aborted) return;
@@ -117,6 +121,8 @@ function App() {
     const doNotTrack = getDoNotTrack();
     const gpc = getGlobalPrivacyControl();
     const preferences = getSystemPreferences();
+    const webdriver = getWebdriver();
+    const pdfViewerEnabled = getPdfViewerEnabled();
     const storageEstimate = await getStorageEstimate();
 
     if (gen !== collectGen.current || ac.signal.aborted) return;
@@ -147,6 +153,9 @@ function App() {
       clientHints,
       preferences,
       battery,
+      webdriver,
+      pdfViewerEnabled,
+      speechVoices,
       fpHistory,
     });
 
@@ -211,7 +220,7 @@ function App() {
             (data.webrtc.localIPs.length || data.webrtc.mdnsCandidates.length || data.webrtc.cgnatIPs.length
               ? ' | Local/CGNAT candidates: ' + [...data.webrtc.localIPs.map(maskIP), ...data.webrtc.cgnatIPs.map(maskIP), ...data.webrtc.mdnsCandidates].join(', ')
               : '')],
-          ['Connection', data.connection ? `Type ${data.connection.effectiveType ?? '?'}, download ${data.connection.downlink ?? '?'} Mbps, delay ${data.connection.rtt ?? '?'} ms, data saver ${data.connection.saveData}` : 'N/A'],
+          ['Connection', data.connection ? `Type ${data.connection.effectiveType ?? '?'} (Chrome guess), max download ${data.connection.downlink ?? '?'} Mbps, delay ${data.connection.rtt ?? '?'} ms, data saver ${data.connection.saveData}` : 'Not available'],
           ['Referrer', data.referrer],
         ],
       },
@@ -222,33 +231,36 @@ function App() {
           ['Same as last visit?', data.fpHistory.matches === null ? 'First recorded visit' : data.fpHistory.matches ? 'Yes: recognizable without cookies' : 'No, it changed'],
           ['Hidden drawing test', data.canvasFingerprint],
           ['Silent sound test', data.audioFingerprint],
-          ['Graphics card', data.webgl.available ? data.webgl.vendor + ' / ' + data.webgl.renderer : 'N/A'],
-          ['Fonts detected', String(data.fonts.length)],
+          ['Graphics card', data.webgl.available ? data.webgl.vendor + ' / ' + data.webgl.renderer + (data.webgl.unmasked ? '' : ' (generic name)') : 'Not available'],
+          ['Fonts detected', String(data.fonts.length) + ' of the families we check'],
         ],
       },
       {
-        heading: 'Browser & System',
+        heading: 'Browser and system',
         rows: [
           ['Browser name', data.parsedUA.browser + ' / ' + data.parsedUA.os],
           ['Extra Chrome details', data.clientHints.supported ? [data.clientHints.brands.join(' / '), data.clientHints.platform, data.clientHints.platformVersion, data.clientHints.architecture].filter(Boolean).join(' | ') : 'Not supported'],
           ['Screen', `${data.screen.width}×${data.screen.height}, ${data.screen.colorDepth}-bit, ${data.screen.pixelRatio}x`],
-          ['Timezone', data.locale.timezone],
+          ['Timezone', `${data.locale.timezone} (${data.locale.utcOffset})`],
           ['Languages', data.locale.languages.join(', ')],
-          ['Preferences', `${data.preferences.colorScheme} mode, reduced motion ${data.preferences.reducedMotion ? 'on' : 'off'}, touch ${data.preferences.touchSupport ? 'yes (' + data.preferences.maxTouchPoints + ' points)' : 'no'}, ${data.preferences.pointerType}`],
-          ['Hardware', data.hardware.hardwareConcurrency + ' cores' + (data.hardware.deviceMemory != null ? ', ~' + data.hardware.deviceMemory + ' GB RAM' : '')],
+          ['Spoken voices', data.speechVoices ? `${data.speechVoices.count} (${data.speechVoices.names.join(', ') || 'names hidden'})` : 'Not available'],
+          ['Preferences', `${data.preferences.colorScheme} mode, reduced motion ${data.preferences.reducedMotion ? 'on' : 'off'}, contrast ${data.preferences.highContrast ? 'high' : 'normal'}, gamut ${data.preferences.colorGamut}, touch ${data.preferences.touchSupport ? 'yes (' + data.preferences.maxTouchPoints + ' points)' : 'no'}, ${data.preferences.pointerType}`],
+          ['Hardware', (data.hardware.hardwareConcurrency != null ? data.hardware.hardwareConcurrency + ' logical processors' : 'unknown processors') + (data.hardware.deviceMemory != null ? ', ~' + data.hardware.deviceMemory + ' GB RAM' : '')],
           ['Battery', data.battery ? `${data.battery.level}%${data.battery.charging ? ' (charging)' : ''}` : 'Not exposed'],
-          ['Media devices', data.mediaDevices ? `${data.mediaDevices.videoinput} camera(s), ${data.mediaDevices.audioinput} mic(s), ${data.mediaDevices.audiooutput} speaker(s)` : 'N/A'],
+          ['Media devices', data.mediaDevices ? `${data.mediaDevices.videoinput} camera(s), ${data.mediaDevices.audioinput} mic(s), ${data.mediaDevices.audiooutput} speaker(s)${data.mediaDevices.labelsVisible ? '' : ' (names hidden; counts may be incomplete)'}` : 'Not available'],
+          ['PDF viewer', data.pdfViewerEnabled == null ? 'Not reported' : data.pdfViewerEnabled ? 'Built-in viewer on' : 'Built-in viewer off'],
+          ['Automated browser', data.webdriver ? 'Yes (navigator.webdriver)' : 'No'],
         ],
       },
       {
-        heading: 'Privacy Settings',
+        heading: 'Privacy settings',
         rows: [
-          ['Permissions', data.permissions.length ? data.permissions.map(p => `${p.name}=${p.state}`).join(', ') : 'N/A'],
+          ['Permissions', data.permissions.length ? data.permissions.map(p => `${p.name}=${p.state}`).join(', ') : 'Not available'],
           ['Ad blocker', data.adBlocker ? 'Yes' : 'No'],
           ['Cookies', (data.cookies.enabled ? 'Enabled' : 'Disabled') + ' | This site can set cookies: ' + data.cookies.firstPartyWrite + ' | Other sites’ cookies: ' + data.cookies.thirdParty],
           ['Do Not Track', data.doNotTrack],
           ['Global Privacy Control', data.gpc],
-          ['Storage', data.storageEstimate ? `${formatStorageBytes(data.storageEstimate.usage)} / ${formatStorageBytes(data.storageEstimate.quota)} (${data.storageEstimate.usagePercent})` : 'N/A'],
+          ['Storage', data.storageEstimate ? `${formatStorageBytes(data.storageEstimate.usage)} / ${formatStorageBytes(data.storageEstimate.quota)} (${data.storageEstimate.usagePercent})` : 'Not available'],
         ],
       },
     ];
@@ -420,7 +432,7 @@ function App() {
                 disabled={loading || !data}
                 aria-haspopup="menu"
                 aria-expanded={downloadMenuOpen}
-                title="Download the report. Choose a format"
+                title="Choose a download format"
               >
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
@@ -433,10 +445,10 @@ function App() {
               {downloadMenuOpen && (
                 <div className="download-menu" role="menu">
                   <button role="menuitem" onClick={() => handleDownloadReport('pdf', redactDownload)}>
-                    PDF <span className="menu-hint">formatted document</span>
+                    PDF <span className="menu-hint">for printing</span>
                   </button>
                   <button role="menuitem" onClick={() => handleDownloadReport('txt', redactDownload)}>
-                    Text <span className="menu-hint">plain .txt</span>
+                    Text <span className="menu-hint">plain file</span>
                   </button>
                   <button role="menuitem" onClick={() => handleDownloadReport('json', redactDownload)}>
                     JSON <span className="menu-hint">for other programs</span>
@@ -447,7 +459,7 @@ function App() {
                       checked={redactDownload}
                       onChange={e => setRedactDownload(e.target.checked)}
                     />
-                    Mask IP addresses
+                    Hide IP addresses
                   </label>
                 </div>
               )}
@@ -505,7 +517,7 @@ function App() {
                     <p className="summary-sub">
                       {exp.exposedCount} of {exp.signals.length} tracking methods work in this browser.
                       That’s a tally of techniques, not how unique you are among everyone on the internet.
-                      For that kind of score, use <a href="https://coveryourtracks.eff.org/" target="_blank" rel="noopener noreferrer">EFF's Cover Your Tracks</a>.
+                      For that kind of score, use <a href="https://coveryourtracks.eff.org/" target="_blank" rel="noopener noreferrer">EFF’s Cover Your Tracks</a>.
                     </p>
                   </div>
                   <div className="summary-score" style={{ borderColor: levelColor, color: levelColor }}>
@@ -550,7 +562,7 @@ function App() {
             </p>
             <p>
               Each card above shows one clue, how it’s read, and what reduces it. To see how unique you are among a real
-              crowd of people, use <a href="https://coveryourtracks.eff.org/" target="_blank" rel="noopener noreferrer">EFF's
+              crowd of people, use <a href="https://coveryourtracks.eff.org/" target="_blank" rel="noopener noreferrer">EFF’s
               Cover Your Tracks</a>. The research that started this field is the EFF’s 2010 Panopticlick paper.
             </p>
           </section>
@@ -571,7 +583,7 @@ function App() {
               <details>
                 <summary><span>What information does my browser reveal to websites?</span></summary>
                 <p>
-                  Your internet address and provider, a stable nickname for this browser, hidden drawing and silent-sound
+                  Your internet address and provider, a stable nickname for this browser, hidden drawing and silent sound
                   tests, your graphics card model, a sample of installed fonts, processor cores and memory, screen size,
                   timezone, language, extra Chrome details (exact Windows/macOS version), whether cookies work, and
                   whether a video-call feature can reveal your real IP even on a VPN.
@@ -590,13 +602,13 @@ function App() {
                 <p>
                   This page counts how many tracking methods work in your browser. It is not a score of how unique you
                   are. For that, you need a crowd to compare against: use{' '}
-                  <a href="https://coveryourtracks.eff.org/" target="_blank" rel="noopener noreferrer">EFF's Cover Your Tracks</a>.
+                  <a href="https://coveryourtracks.eff.org/" target="_blank" rel="noopener noreferrer">EFF’s Cover Your Tracks</a>.
                 </p>
               </details>
               <details>
                 <summary><span>Can I stop websites from fingerprinting me?</span></summary>
                 <p>
-                  Two things work: look like everyone else (Tor Browser) or look different every time (Brave slightly
+                  Two things work: look like everyone else (the Tor Browser) or look different every time (Brave slightly
                   randomizes drawings, sound, and graphics per site). An ad blocker such as uBlock Origin, or Firefox’s
                   tracking protection, stops most companies from collecting the nickname. Deleting cookies does not
                   change it.
