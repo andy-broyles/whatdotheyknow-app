@@ -490,8 +490,8 @@ function App() {
       {/* Hero */}
       <section className="hero">
         <div className="container">
-          <h1>What does the internet know about you?</h1>
-          <p>A live check of what a website can learn from one visit: roughly where you are, what device you’re on, and a nickname that can follow you around.</p>
+          <h1>What does the internet know about me?</h1>
+          <p>A live check of what every website can learn from one visit: roughly where you are, what device you’re on, and a nickname that can follow you around.</p>
           <div className="privacy-badge">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
@@ -598,6 +598,22 @@ function App() {
                 </p>
               </details>
               <details>
+                <summary><span>What every browser knows about you?</span></summary>
+                <p>
+                  Your browser tells every site your screen size, timezone, language, a sample of fonts, and often your
+                  graphics chip. Chrome also shares extra details like the exact Windows or macOS version. This page lists
+                  those clues. Names and files stay off-limits unless you type them.
+                </p>
+              </details>
+              <details>
+                <summary><span>Is there a website that knows everything about you?</span></summary>
+                <p>
+                  No site knows everything. Search results that claim that are usually a live check of what a page can see
+                  from one visit, not your accounts or private files. This page is that kind of check: location from your
+                  IP, device details, and a nickname that can follow you. It is not a people-search or data-broker lookup.
+                </p>
+              </details>
+              <details>
                 <summary><span>How much does the internet know about me?</span></summary>
                 <p>
                   This page counts how many tracking methods work in your browser. It is not a score of how unique you
@@ -630,9 +646,11 @@ function App() {
             clear them.
           </p>
           <p>
-            Built with privacy in mind. <a href="https://github.com/andy-broyles/whatdotheyknow-app" target="_blank" rel="noopener noreferrer">View source on GitHub</a>
+            Tom suggested making this. Built with privacy in mind.{' '}
+            <a href="https://github.com/andy-broyles/whatdotheyknow-app" target="_blank" rel="noopener noreferrer">View source on GitHub</a>
+            {' · '}
+            <a href="https://ko-fi.com/andybroyles" target="_blank" rel="noopener noreferrer">Tip the developer</a>
           </p>
-          <p style={{ marginTop: '0.5rem' }}>Thanks, Tom</p>
         </div>
       </footer>
     </>
