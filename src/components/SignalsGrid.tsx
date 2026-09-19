@@ -81,15 +81,23 @@ export function SignalsGrid({
         icon={<Icon><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></Icon>}
         iconTone="blue"
         title="Where you are (from your IP)"
-        info="We ask a location service (ipapi.co, then freeipapi.com, then ipwho.is) for your internet address and city. Your browser makes the request; those companies see your IP the way any website does. If all three time out or are blocked, we show nothing."
-        explanation="Your internet address (IP) is like a return address for every site you visit. It usually shows your city and who provides your internet. Sites can often tell a VPN or proxy from a home connection. A datacenter address is not the same as a VPN, so we only flag VPN or proxy when the lookup service actually reports that."
-        tip={<>A reputable VPN or the Tor Browser changes the address sites see. Check the “VPN/proxy visible” row: sites can usually tell you’re on a VPN even though they can’t see through it.</>}
+        info="We ask a location service (ipapi.co, then freeipapi.com, then ipwho.is) for your internet address and city. To see both the older kind of address (IPv4) and the newer kind (IPv6), we also ask ipify.org. Your browser makes those requests; those companies see your IP the way any website does. If the lookups time out or are blocked, we show what we got."
+        explanation="Your internet address (IP) is like a return address for every site you visit. It usually shows your city and who provides your internet. You can have two kinds at once: IPv4 and IPv6. Sites may see either. Some VPNs only hide IPv4, so the IPv6 line is the one to check. Sites can often tell a VPN or proxy from a home connection. A datacenter address is not the same as a VPN, so we only flag VPN or proxy when the lookup service actually reports that."
+        tip={<>A reputable VPN or the Tor Browser changes the address sites see — if you use a VPN, confirm it covers IPv6, or turn IPv6 off. Check the “VPN/proxy visible” row: sites can usually tell you’re on a VPN even though they can’t see through it.</>}
         loading={loading}
       >
         {data?.ipInfo ? (
           <>
             <div className="card-value">{data.ipInfo.ip}</div>
             <div className="card-details">
+              <div className="card-detail">
+                <span className="card-detail-label">Older address (IPv4)</span>
+                <span className="card-detail-value">{data.ipInfo.ipv4 ?? 'None detected'}</span>
+              </div>
+              <div className="card-detail">
+                <span className="card-detail-label">Newer address (IPv6)</span>
+                <span className="card-detail-value">{data.ipInfo.ipv6 ?? 'None detected'}</span>
+              </div>
               <div className="card-detail">
                 <span className="card-detail-label">City</span>
                 <span className="card-detail-value">{data.ipInfo.city}</span>
@@ -252,14 +260,24 @@ export function SignalsGrid({
             <span className="card-detail-value">{data?.locale.platform}</span>
           </div>
           {data?.speechVoices ? (
-            <div className="card-detail">
-              <span className="card-detail-label">Spoken voices</span>
-              <span className="card-detail-value">
-                {data.speechVoices.count === 0
-                  ? 'None listed yet'
-                  : `${data.speechVoices.count} (${data.speechVoices.names.join(', ')}${data.speechVoices.count > data.speechVoices.names.length ? '…' : ''})`}
-              </span>
-            </div>
+            <>
+              <div className="card-detail">
+                <span className="card-detail-label">Spoken voices</span>
+                <span className="card-detail-value">
+                  {data.speechVoices.count === 0 ? 'None listed yet' : data.speechVoices.count}
+                </span>
+              </div>
+              {data.speechVoices.names.length > 0 && (
+                <div className="list-items" style={{ marginTop: '0.25rem' }}>
+                  {data.speechVoices.names.map((name) => (
+                    <span key={name} className="list-item">{name}</span>
+                  ))}
+                  {data.speechVoices.count > data.speechVoices.names.length && (
+                    <span className="list-item">+{data.speechVoices.count - data.speechVoices.names.length} more</span>
+                  )}
+                </div>
+              )}
+            </>
           ) : null}
         </div>
       </SignalCard>
@@ -327,10 +345,14 @@ export function SignalsGrid({
         {data?.webrtc.leaking ? (
           <>
             <div className="card-value" style={{ color: 'var(--danger)' }}>
-              Public IP exposed via video calls (WebRTC)
-              {data.ipInfo && data.webrtc.publicIPs.some(ip => ip !== data.ipInfo!.ip) &&
-                ', and it differs from the address this page already sees (possible VPN bypass)'}
+              Public IP exposed via video calls
             </div>
+            {data.ipInfo && data.webrtc.publicIPs.some(ip =>
+              ip !== data.ipInfo!.ip && ip !== data.ipInfo!.ipv4 && ip !== data.ipInfo!.ipv6) && (
+              <p style={{ fontSize: '0.8125rem', color: 'var(--danger)', margin: '0 0 0.5rem' }}>
+                This address is not the same one the page already sees. A VPN that doesn’t cover video calls can cause that.
+              </p>
+            )}
             <div className="list-items">
               {data.webrtc.publicIPs.map((ip, i) => (
                 <span key={i} className="list-item">{ip}</span>

@@ -258,13 +258,16 @@ body {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
+  gap: 0.75rem;
   margin-bottom: 1rem;
 }
 
 .card-title {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 0.75rem;
+  min-width: 0;
+  flex: 1;
 }
 
 .card-icon {
@@ -287,6 +290,8 @@ body {
   font-size: 1rem;
   font-weight: 600;
   line-height: 1.35;
+  overflow-wrap: break-word;
+  hyphens: none;
 }
 
 /* Info icon + "How is this calculated?" tooltip */
@@ -372,7 +377,9 @@ body {
   font-size: 1.125rem;
   font-weight: 600;
   color: var(--text-primary);
-  word-break: break-all;
+  overflow-wrap: break-word;
+  word-break: normal;
+  hyphens: none;
   margin-bottom: 0.5rem;
 }
 
@@ -382,6 +389,7 @@ body {
   background: var(--bg-secondary);
   padding: 0.75rem;
   border-radius: 0.5rem;
+  overflow-wrap: anywhere;
   overflow-x: auto;
 }
 
@@ -394,16 +402,24 @@ body {
 .card-detail {
   display: flex;
   justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.75rem 1rem;
   font-size: 0.875rem;
 }
 
 .card-detail-label {
   color: var(--text-muted);
+  flex: 0 1 auto;
+  max-width: 48%;
 }
 
 .card-detail-value {
   color: var(--text-secondary);
   font-weight: 500;
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: right;
+  overflow-wrap: break-word;
 }
 
 .card-explanation {
@@ -449,6 +465,8 @@ body {
   border-radius: 0.375rem;
   font-size: 0.8125rem;
   color: var(--text-secondary);
+  max-width: 100%;
+  overflow-wrap: break-word;
 }
 
 /* Download format menu */
@@ -602,6 +620,77 @@ body {
 .signal-safe .signal-dot { color: var(--success); }
 .signal-label { color: var(--text-secondary); font-weight: 500; }
 .signal-detail { color: var(--text-muted); margin-left: auto; text-align: right; }
+
+.share-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border-color);
+}
+
+.share-x {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.share-x:hover {
+  color: var(--text-primary);
+}
+
+.share-hint {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.cant-see {
+  max-width: 760px;
+  margin: 3rem auto 1rem;
+}
+
+.cant-see h2 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin-bottom: 1rem;
+}
+
+.cant-see p,
+.cant-see li {
+  color: var(--text-secondary);
+  font-size: 0.9375rem;
+  line-height: 1.7;
+}
+
+.cant-see p {
+  margin-bottom: 1rem;
+}
+
+.cant-see ul {
+  list-style: none;
+  display: grid;
+  gap: 0.75rem;
+  margin: 0 0 1rem;
+}
+
+.cant-see li {
+  padding: 0.75rem 1rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 0.5rem;
+}
+
+.cant-see strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
 
 @media (max-width: 600px) {
   .summary-headline { flex-direction: column-reverse; text-align: center; }
@@ -781,6 +870,10 @@ body {
   color: var(--accent);
   text-decoration: underline;
   text-underline-offset: 0.2em;
+}
+
+.footer a svg {
+  display: none;
 }
 
 .footer a:hover {

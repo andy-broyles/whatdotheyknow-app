@@ -60,6 +60,63 @@ function computeExposure(data: PrivacyData): { signals: ExposureSignal[]; expose
   return { signals, exposedCount, level };
 }
 
+// Plain link to X's compose page. No X script, no click tracker, no report data.
+const SITE_URL = 'https://whatdotheyknow.app/';
+const SHARE_ON_X_HREF =
+  'https://x.com/intent/tweet?text=' +
+  encodeURIComponent(
+    `Live check of what every website can learn from one visit. Runs in your browser. Nothing stored. ${SITE_URL}`,
+  );
+
+function ShareOnXLink({ className }: { className?: string }) {
+  return (
+    <a
+      className={className}
+      href={SHARE_ON_X_HREF}
+      target="_blank"
+      rel="noopener noreferrer"
+      title="Opens X in a new tab. Your report is not attached."
+    >
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.74l7.727-8.835L1.254 2.25H8.08l4.253 5.622L18.244 2.25zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+      </svg>
+      Share on X
+    </a>
+  );
+}
+
+const CANT_SEE = [
+  ['Your name', 'A site does not know who you are unless you type it or log in.'],
+  ['Your email address', 'Same rule: only if you enter it or sign in.'],
+  ['Passwords and account contents', 'Those stay with the site you logged into, not every site you visit.'],
+  ['Files on this computer', 'Websites cannot read your documents unless you pick a file to upload.'],
+  ['Other tabs and your full history', 'A site sees this visit, not the rest of your day.'],
+  ['Your exact street address', 'Your internet address usually gives a city or region, not a house number.'],
+] as const;
+
+function CantSeeSection() {
+  return (
+    <section className="cant-see" aria-labelledby="cant-see-heading">
+      <h2 id="cant-see-heading">What a website cannot see from one visit</h2>
+      <p>
+        The report above is what any site can read just because you opened it. It is not a people-search.
+        Those companies sell name and address records. This page does not.
+      </p>
+      <ul>
+        {CANT_SEE.map(([label, why]) => (
+          <li key={label}>
+            <strong>{label}.</strong> {why}
+          </li>
+        ))}
+      </ul>
+      <p>
+        If you type something, log in, or click Allow on a permission prompt, that site can see what you just
+        gave it. This page never asks.
+      </p>
+    </section>
+  );
+}
+
 function App() {
   const [darkMode, setDarkMode] = useState(() => {
     if (typeof window === 'undefined') return true;
@@ -215,7 +272,7 @@ function App() {
       {
         heading: 'Where you are and how you connect',
         rows: [
-          ['Internet provider & location', data.ipInfo ? `${maskIP(data.ipInfo.ip)} | ${data.ipInfo.city}, ${data.ipInfo.region}, ${data.ipInfo.country} | ${data.ipInfo.isp}` + (data.ipInfo.vpnOrProxy !== null ? ` | VPN/proxy per ${data.ipInfo.source}: ${data.ipInfo.vpnOrProxy ? 'Yes' : 'No'}` : '') : 'Couldn’t look up (blocked or timed out)'],
+          ['Internet provider & location', data.ipInfo ? `${maskIP(data.ipInfo.ip)} | IPv4 ${data.ipInfo.ipv4 ? maskIP(data.ipInfo.ipv4) : 'none'} | IPv6 ${data.ipInfo.ipv6 ? maskIP(data.ipInfo.ipv6) : 'none'} | ${data.ipInfo.city}, ${data.ipInfo.region}, ${data.ipInfo.country} | ${data.ipInfo.isp}` + (data.ipInfo.vpnOrProxy !== null ? ` | VPN/proxy per ${data.ipInfo.source}: ${data.ipInfo.vpnOrProxy ? 'Yes' : 'No'}` : '') : 'Couldn’t look up (blocked or timed out)'],
           ['WebRTC (video-call leak)', (data.webrtc.leaking ? 'Public IP exposed: ' + data.webrtc.publicIPs.map(maskIP).join(', ') : 'No public IP exposed') +
             (data.webrtc.localIPs.length || data.webrtc.mdnsCandidates.length || data.webrtc.cgnatIPs.length
               ? ' | Local/CGNAT candidates: ' + [...data.webrtc.localIPs.map(maskIP), ...data.webrtc.cgnatIPs.map(maskIP), ...data.webrtc.mdnsCandidates].join(', ')
@@ -533,6 +590,10 @@ function App() {
                     </li>
                   ))}
                 </ul>
+                <p className="share-row">
+                  <ShareOnXLink className="share-x" />
+                  <span className="share-hint">Opens X. Your report stays on this device.</span>
+                </p>
               </section>
             );
           })()}
@@ -543,6 +604,8 @@ function App() {
             onClearHistory={handleClearHistory}
             formatStorageBytes={formatStorageBytes}
           />
+
+          <CantSeeSection />
 
           {/* Explainer */}
           <section className="explainer" aria-labelledby="explainer-heading">
@@ -639,15 +702,16 @@ function App() {
       <footer className="footer">
         <div className="container">
           <p style={{ marginBottom: '0.5rem' }}>
-            <strong>Privacy:</strong> We don’t have an account system or a database. Your report is built in this
-            browser. A few checks contact other companies (location lookup, video-call leak test, ad-blocker probe,
-            speed to Google/Cloudflare/etc.). Those companies see your IP, the way any website does. Each card’s ⓘ
-            says exactly what it contacts. This device may keep a nickname demo and your light/dark choice until you
-            clear them.
+            <strong>Privacy:</strong> Your report stays on this computer. We never see it. A few tests ask other
+            companies for help (where you are, the video-call leak, whether ads are blocked, a speed check), so those
+            companies see your internet address, same as any website would. The ⓘ on a card says who it talked to.
+            This browser keeps your light/dark choice and the nickname demo until you clear them.
           </p>
           <p>
             Tom suggested making this. Built with privacy in mind.{' '}
             <a href="https://github.com/andy-broyles/whatdotheyknow-app" target="_blank" rel="noopener noreferrer">View source on GitHub</a>
+            {' · '}
+            <ShareOnXLink />
             {' · '}
             <a href="https://ko-fi.com/andybroyles" target="_blank" rel="noopener noreferrer">Tip the developer</a>
           </p>

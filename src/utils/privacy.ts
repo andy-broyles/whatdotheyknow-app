@@ -14,6 +14,10 @@ export interface IPInfo {
   // Datacenter/hosting alone is not treated as a VPN.
   vpnOrProxy: boolean | null;
   source: string;
+  /** Public IPv4 if we saw one; null if this connection doesn't appear to have it. */
+  ipv4: string | null;
+  /** Public IPv6 if we saw one; null if this connection doesn't appear to have it. */
+  ipv6: string | null;
 }
 
 export interface WebRTCInfo {
@@ -37,8 +41,47 @@ export interface WebGLInfo {
 
 const IP_LOOKUP_TIMEOUT_MS = 3000;
 
+async function fetchIpify(url: string, signal?: AbortSignal): Promise<string | null> {
+  if (signal?.aborted) return null;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), IP_LOOKUP_TIMEOUT_MS);
+  const onAbort = () => controller.abort();
+  signal?.addEventListener('abort', onAbort);
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    if (!response.ok) return null;
+    const data = (await response.json()) as { ip?: unknown };
+    return typeof data.ip === 'string' && data.ip ? data.ip : null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener('abort', onAbort);
+  }
+}
+
+function withAddressFamilies(
+  info: Omit<IPInfo, 'ipv4' | 'ipv6'>,
+  ipv4: string | null,
+  ipv6: string | null,
+): IPInfo {
+  const geoIsV6 = info.ip.includes(':');
+  return {
+    ...info,
+    ipv4: geoIsV6 ? ipv4 : info.ip,
+    ipv6: geoIsV6 ? info.ip : ipv6,
+  };
+}
+
 // Get IP and geolocation info
 export async function getIPInfo(signal?: AbortSignal): Promise<IPInfo | null> {
+  // IPv4 and IPv6 in parallel with the city lookup. ipify sees that address
+  // the way any site would; we only keep it in this page.
+  const otherFamilies = Promise.all([
+    fetchIpify('https://api.ipify.org?format=json', signal),
+    fetchIpify('https://api6.ipify.org?format=json', signal),
+  ]);
+
   // Try multiple APIs in sequence until one works
   const apis = [
     {
@@ -108,7 +151,8 @@ export async function getIPInfo(signal?: AbortSignal): Promise<IPInfo | null> {
         const data = await response.json();
         const result = api.parse(data);
         if (result.ip && result.ip !== 'Unknown') {
-          return result;
+          const [ipv4, ipv6] = await otherFamilies;
+          return withAddressFamilies(result, ipv4, ipv6);
         }
       }
     } catch {
@@ -210,9 +254,14 @@ export function getWebGLInfo(): WebGLInfo {
 }
 
 // RFC 1918 / link-local / loopback IPv4 and private/link-local/loopback IPv6
+function normalizeIP(ip: string): string {
+  return ip.trim().replace(/^\[/, '').replace(/\]$/, '').split('%')[0];
+}
+
 function isPrivateIP(ip: string): boolean {
-  if (ip.includes(':')) {
-    const v6 = ip.toLowerCase().split('%')[0];
+  const host = normalizeIP(ip);
+  if (host.includes(':')) {
+    const v6 = host.toLowerCase();
     return (
       v6 === '::1' ||
       v6.startsWith('fe80:') ||
@@ -220,7 +269,7 @@ function isPrivateIP(ip: string): boolean {
       v6.startsWith('fd')
     );
   }
-  const parts = ip.split('.').map(Number);
+  const parts = host.split('.').map(Number);
   if (parts.length !== 4 || parts.some(n => Number.isNaN(n) || n < 0 || n > 255)) return false;
   const [a, b] = parts;
   return (
@@ -245,10 +294,8 @@ function isCgnatIP(ip: string): boolean {
 
 function iceAddress(candidate: RTCIceCandidate): string | null {
   const ext = candidate as RTCIceCandidate & { address?: string | null };
-  if (ext.address) return ext.address;
-  // candidate:foundation component protocol priority address port typ ...
-  const parts = candidate.candidate.split(' ');
-  return parts.length >= 5 ? parts[4] : null;
+  const raw = ext.address || (candidate.candidate.split(' ').length >= 5 ? candidate.candidate.split(' ')[4] : null);
+  return raw ? normalizeIP(raw) : null;
 }
 
 // Detect WebRTC leaks
